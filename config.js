@@ -31,7 +31,8 @@ window.GAME_CONFIG = {
     "Mistri maan jaooo",
     "Modified hai ji",
     "Aapkke parents apko game khelna nhi sikhate ",
-    "Ye le LOL emote wo bhi hayato mode ke saath "
+    "Ye le LOL emote wo bhi hayato mode ke saath ",
+    "Jad buddhi" 
   ],
 
   sounds: {
