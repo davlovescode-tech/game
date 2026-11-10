@@ -27,11 +27,11 @@ window.GAME_CONFIG = {
     "Ghee khatam",
     "Ghar jake sutti babu",
     "Data khatam khel khatam",
-    "Charging 1% thi, ab 0% 🔋",
-    "Mummy ne bulaya, khel khatam",
-    "Power cut ho gaya bhai ⚡",
-    "Maggi ban gayi, ab jaa 🍜",
-    "Recharge khatam, bye bye 📵"
+    "Ahmed bhai ki chaat looo",
+    "Mistri maan jaooo",
+    "Modified hai ji",
+    "Aapkke parents apko game khelna nhi sikhate ",
+    "Ye le LOL emote wo bhi hayato mode ke saath "
   ],
 
   sounds: {
