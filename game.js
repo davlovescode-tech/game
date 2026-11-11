@@ -383,8 +383,8 @@ $("prompt").addEventListener("click",interact);
 
 /* ---------- input ---------- */
 const keys={};
-addEventListener("keydown",e=>{ keys[e.code]=true; if(e.code==="Space"||e.code.indexOf("Arrow")===0) e.preventDefault(); if(e.code==="KeyE") interact(); });
-addEventListener("keyup",e=>{ keys[e.code]=false; });
+addEventListener("keydown",e=>{ if(ADM.open) return; keys[e.code]=true; if(e.code==="Space"||e.code.indexOf("Arrow")===0) e.preventDefault(); if(e.code==="KeyE") interact(); });
+addEventListener("keyup",e=>{ if(ADM.open) return; keys[e.code]=false; });
 addEventListener("blur",()=>{ for(const k in keys) keys[k]=false; });
 const joy={x:0,y:0,id:null}, joyEl=$("joy"), knob=$("knob");
 function moveJoy(e){ const r=joyEl.getBoundingClientRect(); let dx=e.clientX-(r.left+r.width/2), dy=e.clientY-(r.top+r.height/2); const m=Math.hypot(dx,dy), max=r.width/2; if(m>max){ dx*=max/m; dy*=max/m; } joy.x=dx/max; joy.y=-dy/max; knob.style.transform="translate(calc(-50% + "+dx+"px),calc(-50% + "+dy+"px))"; }
@@ -463,7 +463,7 @@ function frame(t){
     } else {
       timer-=dt; roundT+=dt;
       freezeT=Math.max(0,freezeT-dt); gravT=Math.max(0,gravT-dt); hyperT=Math.max(0,hyperT-dt);
-      runners.forEach(r=>{ if(r.juiceT>0) r.juiceT-=dt; if(r.invuln>0) r.invuln-=dt; });
+      runners.forEach(r=>{ if(r.juiceT>0) r.juiceT-=dt; if(r.invuln>0) r.invuln-=dt; }); if(ADM.god&&player&&player.alive) player.invuln=2;
       if(CFG.daviccinoEvents){ evT-=dt; if(evT<=0){ evT=rnd(9,14); daviEvent(); } }
       nextRandSound-=dt;
       if(nextRandSound<=0){ nextRandSound=rnd(CFG.sounds.randomEveryMin,CFG.sounds.randomEveryMax); playFrom(SND.random); }
@@ -551,6 +551,112 @@ function titleReact(){
   else if(!on&&titleHer){ titleHer=false; document.body.classList.remove("hush"); }
 }
 $("nameIn").addEventListener("input",titleReact); titleReact();
+/* ---------- admin console (Dav only) ----------
+   Open: press ` (backtick)  or  tap the "A DAVICCINO PRODUCTION" badge / the round timer 5 times quickly.
+   Locked by a passcode (stored only as a number in config.js -> adminHash). Affects ONLY the local game
+   on the device it is used on, so there is nothing to protect on a server. */
+function cyrb53(str,seed){ seed=seed||0; let h1=0xdeadbeef^seed,h2=0x41c6ce57^seed; for(let i=0,ch;i<str.length;i++){ ch=str.charCodeAt(i); h1=Math.imul(h1^ch,2654435761); h2=Math.imul(h2^ch,1597334677); } h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909); h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909); return 4294967296*(2097151&h2)+(h1>>>0); }
+const ADM={open:false,authed:false,god:false,hist:[],hi:0};
+try{ ADM.authed=sessionStorage.getItem("bb3d-adm")==="1"; }catch(e){}
+const admEls={};
+(function buildAdminUI(){
+  const st=document.createElement("style");
+  st.textContent="#adm{position:fixed;left:0;right:0;bottom:0;z-index:300;display:none;background:#08041af2;border-top:2px solid #ff3df0;font:13px ui-monospace,Menlo,Consolas,monospace;color:#e9dcff;padding:8px 10px max(8px,env(safe-area-inset-bottom))}"+
+   "#adm .log{height:30vh;max-height:230px;overflow:auto;white-space:pre-wrap;line-height:1.45;margin-bottom:6px;user-select:text;-webkit-user-select:text}"+
+   "#adm .log i{color:#8e7bb5;font-style:normal}#adm .log b{color:#ff9bf5}#adm .log u{color:#ff6b81;text-decoration:none}"+
+   "#adm .row{display:flex;gap:6px}#adm input{flex:1;min-width:0;background:#150a33;color:#fff;border:1px solid #ff3df088;border-radius:8px;padding:9px;font:inherit}"+
+   "#adm button{background:#2a1260;color:#fff;border:1px solid #ff3df088;border-radius:8px;padding:7px 10px;font:inherit}"+
+   "#adm .q{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}#adm .q button{padding:5px 8px;font-size:12px}";
+  document.head.appendChild(st);
+  const d=document.createElement("div"); d.id="adm";
+  d.innerHTML='<div class="log" id="admLog"></div><div class="q" id="admQ"></div><div class="row"><input id="admIn" autocomplete="off" autocapitalize="none" spellcheck="false"><button id="admGo">Run</button><button id="admX">✕</button></div>';
+  document.body.appendChild(d);
+  admEls.box=d; admEls.log=d.querySelector("#admLog"); admEls.in=d.querySelector("#admIn"); admEls.q=d.querySelector("#admQ");
+  ["/start","/end","/freeze 5","/spawn 3","/clear","/event","/shield","/god","/pts 10","/help"].forEach(c=>{
+    const b=document.createElement("button"); b.textContent=c; b.onclick=()=>{ if(ADM.authed) runAdmin(c); else admLog("<u>locked</u>"); }; admEls.q.appendChild(b);
+  });
+  d.querySelector("#admGo").onclick=submitAdmin; d.querySelector("#admX").onclick=()=>toggleAdmin(false);
+  admEls.in.addEventListener("keydown",e=>{
+    e.stopPropagation();
+    if(e.key==="Enter") submitAdmin(); else if(e.key==="Escape"||e.key==="`") { e.preventDefault(); toggleAdmin(false); }
+    else if(e.key==="ArrowUp"&&ADM.hist.length){ ADM.hi=Math.max(0,ADM.hi-1); admEls.in.value=ADM.hist[ADM.hi]||""; e.preventDefault(); }
+    else if(e.key==="ArrowDown"&&ADM.hist.length){ ADM.hi=Math.min(ADM.hist.length,ADM.hi+1); admEls.in.value=ADM.hist[ADM.hi]||""; e.preventDefault(); }
+  });
+  admEls.in.addEventListener("keyup",e=>e.stopPropagation());
+})();
+function admLog(html){ admEls.log.insertAdjacentHTML("beforeend",html+"\n"); admEls.log.scrollTop=admEls.log.scrollHeight; }
+function toggleAdmin(on){
+  ADM.open=on===undefined?!ADM.open:on; admEls.box.style.display=ADM.open?"block":"none";
+  if(ADM.open){
+    Object.keys(keys).forEach(k=>{ keys[k]=false; });
+    if(!admEls.log.textContent) admLog(ADM.authed?"<b>Daviccino admin</b> <i>type /help</i>":"<b>Admin locked.</b> <i>enter passcode:</i>");
+    admEls.in.type=ADM.authed?"text":"password"; admEls.in.placeholder=ADM.authed?"/command":"passcode"; setTimeout(()=>admEls.in.focus(),30);
+  } else admEls.in.blur();
+}
+function submitAdmin(){
+  const v=admEls.in.value.trim(); admEls.in.value=""; if(!v) return;
+  if(!ADM.authed){
+    if(cyrb53(v,7)===CFG.adminHash){ ADM.authed=true; try{ sessionStorage.setItem("bb3d-adm","1"); }catch(e){} admEls.in.type="text"; admEls.in.placeholder="/command"; admLog("<b>Unlocked.</b> Welcome back, Dav. <i>/help</i>"); }
+    else admLog("<u>wrong passcode</u>");
+    return;
+  }
+  ADM.hist.push(v); ADM.hi=ADM.hist.length; admLog("<i>&gt;</i> "+esc(v)); runAdmin(v);
+}
+(function adminOpeners(){
+  addEventListener("keydown",e=>{ if(e.key==="`"&&!ADM.open){ e.preventDefault(); toggleAdmin(true); } },true);
+  [".kicker","#timer"].forEach(sel=>{
+    const el=document.querySelector(sel); if(!el) return; let n=0,t0=0; el.style.pointerEvents="auto";
+    el.addEventListener("click",()=>{ const now=Date.now(); if(now-t0>1600) n=0; t0=now; if(++n>=5){ n=0; toggleAdmin(true); } });
+  });
+})();
+const meR=()=>player;
+const num=(s,d,lo,hi)=>{ const v=parseFloat(s); return isFinite(v)?clamp(v,lo,hi):d; };
+const ADMIN_HELP=[
+  "<b>round</b>  /start  /end  /time s  /lobby s  /rounds n  /reset",
+  "<b>squares</b>  /spawn n  /clear  /freeze s  /grav s  /hyper s  /event [1-6]",
+  "<b>you</b>  /god  /shield  /speed n  /pts n  /kill name  /killbots  /tp juice|chaat|davi",
+  "<b>daviccino</b>  /say text  /ann text  /fx  /her on|off",
+  "<b>world</b>  /map bazaar|disco|classroom|taj  /quality low|high",
+  "<b>tools</b>  /hash word (new passcode number for config.js)  /lock  /status"
+];
+function runAdmin(line){
+  const parts=line.replace(/^\//,"").split(/\s+/), cmd=(parts.shift()||"").toLowerCase(), a=parts, rest=parts.join(" ");
+  const ok=m=>admLog("<b>ok</b> "+m), no=m=>admLog("<u>"+m+"</u>");
+  const inPlay=state==="play", inLobby=state==="lobby";
+  switch(cmd){
+    case "help": case "?": ADMIN_HELP.forEach(h=>admLog(h)); break;
+    case "status": ok("state="+state+" timer="+Math.ceil(timer)+" alive="+runners.filter(r=>r.alive).length+"/"+runners.length+" squares="+chasers.length+" god="+ADM.god+" map="+(nextDef?nextDef.name:"?")); break;
+    case "start": if(inLobby){ timer=.01; ok("starting"); } else no("only in the lobby"); break;
+    case "end": if(inPlay){ timer=.01; grace=0; ok("ending round"); } else no("only during a round"); break;
+    case "time": { const s=num(a[0],CFG.roundSeconds,5,600); CFG.roundSeconds=s; if(inPlay) timer=s; ok("round length "+s+"s"); break; }
+    case "lobby": { const s=num(a[0],CFG.lobbySeconds,3,600); CFG.lobbySeconds=s; if(inLobby) timer=s; ok("lobby length "+s+"s"); break; }
+    case "rounds": { const n=Math.round(num(a[0],CFG.roundsPerGame,1,9)); CFG.roundsPerGame=n; updateLB(); ok("rounds per game "+n); break; }
+    case "reset": results=[]; gameFinished=false; updateLB(); ok("leaderboard cleared"); break;
+    case "spawn": if(inPlay){ const n=Math.round(num(a[0],1,1,20)); for(let i=0;i<n;i++) spawnChaser(); ok("+"+n+" squares"); } else no("only during a round"); break;
+    case "clear": clearChasers(); ok("squares removed (more may spawn)"); break;
+    case "freeze": freezeT=num(a[0],4,1,60); ok("frozen "+freezeT+"s"); break;
+    case "grav": gravT=num(a[0],10,1,120); ok("low gravity "+gravT+"s"); break;
+    case "hyper": hyperT=num(a[0],6,1,60); ok("hyper squares "+hyperT+"s"); break;
+    case "event": { if(!inPlay){ no("only during a round"); break; } const i=parseInt(a[0],10); if(i>=1&&i<=EVENTS.length){ ok("event "+i+(EVENTS[i-1]()===false?" (no valid target)":"")); } else { daviEvent(); ok("random event"); } break; }
+    case "god": ADM.god=!ADM.god; if(!ADM.god&&meR()) meR().invuln=0; ok("god mode "+(ADM.god?"ON":"off")); break;
+    case "shield": if(meR()&&meR().alive){ meR().shield=1; ok("shield up"); } else no("not alive"); break;
+    case "speed": if(meR()){ meR().speed=num(a[0],8.2,3,30); ok("speed "+meR().speed); } break;
+    case "pts": if(meR()){ const n=Math.round(num(a[0],10,-500,5000)); meR().bonus+=n; ok(n+" bonus points (counted at round end)"); } break;
+    case "kill": { const t=rest.toLowerCase(); const r=runners.find(x=>x.alive&&x.name.toLowerCase().indexOf(t)>=0&&t); if(r&&inPlay){ kill(r); ok("killed "+r.name); } else no(inPlay?"no match":"only during a round"); break; }
+    case "killbots": if(inPlay){ runners.forEach(r=>{ if(!r.isPlayer&&r.alive) kill(r); }); ok("bots eliminated"); } else no("only during a round"); break;
+    case "tp": { if(!inLobby){ no("lobby only"); break; } const sp=hub.spots.find(s=>s.id===(a[0]||"").toLowerCase()); if(sp&&meR()){ meR().x=sp.x; meR().z=sp.z; ok("teleported to "+sp.id); } else no("juice | chaat | davi"); break; }
+    case "say": if(rest){ daviSay(rest); BB.bubble(0,6,0,rest,"#ff3df0"); ok("Daviccino spoke"); } else no("/say your text"); break;
+    case "ann": if(rest){ showBanner(esc(rest),3200); ok("announced"); } else no("/ann your text"); break;
+    case "fx": for(let i=0;i<6;i++) setTimeout(()=>emit(rnd(-8,8),rnd(8,16),rnd(-8,8),70,null,10,1.6,5,0),i*220); ok("fireworks"); break;
+    case "her": { const on=(a[0]||"on")!=="off"; HER=on; if(on){ herFirst=true; if(inLobby) herLobbyIntro(); } ok("surprise mode "+(on?"ON":"off")); break; }
+    case "map": { const m=W.MAPS.find(x=>x.key===(a[0]||"").toLowerCase()); if(m){ nextDef=m; prebuilt=false; updateLB(); ok("next map: "+m.name); } else no("bazaar | disco | classroom | taj"); break; }
+    case "quality": if(a[0]==="low"){ Q.pr=.75; BB.setShadows(false); BB.resize(); ok("low quality"); } else if(a[0]==="high"){ Q.pr=Math.min(devicePixelRatio||1,TOUCH?1.5:2); BB.setShadows(!TOUCH); BB.resize(); ok("high quality"); } else no("/quality low|high"); break;
+    case "hash": if(rest){ ok("adminHash: "+cyrb53(rest,7)+"   <i>(paste into config.js)</i>"); } else no("/hash yournewpasscode"); break;
+    case "lock": ADM.authed=false; try{ sessionStorage.removeItem("bb3d-adm"); }catch(e){} admEls.in.type="password"; ok("locked"); break;
+    default: no("unknown command. /help");
+  }
+}
+
 hintEl.textContent=TOUCH?"Left stick: move · Drag: camera · Pinch: zoom · Tap the button near stalls":"WASD move · Space jump · Drag: camera · Scroll: zoom · Q/R rotate · E interact";
 discoverAll().then(buildChaserMats).then(applyDaviFace).then(()=>{ $("play").disabled=false; $("play").textContent="PLAY"; });
 $("play").onclick=()=>{

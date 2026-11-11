@@ -18,6 +18,10 @@
 //  Upload to GitHub and the game finds your files by itself.
 // ============================================================
 window.GAME_CONFIG = {
+  // Admin console: open with ` (backtick) or tap the title badge / timer 5 times. Passcode is stored only as this number.
+  // To change the passcode: unlock, run  /hash yournewpasscode  and paste the number here.
+  adminHash: 3585251374961867,
+
   title: "BHAAG BRAINROT",
   insta: "lowkeytuffdav",     // shown on the title page and in-game
 
