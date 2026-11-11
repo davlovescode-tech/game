@@ -43,7 +43,7 @@ window.GAME_CONFIG = {
   daviccinoLines: [
     "I am Daviccino. I see everything. 👁️",
     "Aura check: you have none 💀",
-    "R stands for Rizz 😎",
+    "R stands for Rougue Coders 😎",
     "Bro really thought he could outrun me",
     "Ganne ka juice peelo, speed badhegi 🥤",
     "Ahmed bhai ki chaat = shield, trust me 🛡️",
