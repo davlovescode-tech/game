@@ -295,7 +295,7 @@ BB.makeAvatar=function(o){
     cape.position.set(0,1.2,-.5); cape.rotation.x=-.12; cape.castShadow=true; inner.add(cape); out.cape=cape;
     const halo=mk(inner,new T.TorusGeometry(.4,.04,8,28),B(0xffe066,{fog:false}),0,3.05,0,{rx:Math.PI/2,glow:true}); out.halo=halo;
     const aura=BB.glowSprite(0xff3df0,6.5,.55); aura.position.set(0,1.5,-.2); inner.add(aura);
-    out.armWave=armR; out.print=print;
+    out.armWave=armR; out.print=print; out.aura=aura;
     armL.rotation.z=-.18;
   }
   inner.scale.setScalar(o.scale||0.75);

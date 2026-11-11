@@ -18,7 +18,7 @@ $("instaTxt").textContent="@"+CFG.insta; $("instaTopTxt").textContent="@"+CFG.in
   const items=["DON'T GET TOUCHED","AURA +1000","GHEE KHATAM","FOLLOW @"+CFG.insta.toUpperCase(),"DAVICCINO SEES ALL","GANNE KA JUICE","AHMED BHAI KI CHAAT","R = RIZZ","DATA KHATAM KHEL KHATAM"];
   const html=items.map(s=>"<span>"+esc(s)+" ✦</span>").join(""); $("mq").innerHTML=html+html;
   const lines=CFG.daviccinoLines; $("says").textContent=pick(lines);
-  setInterval(()=>{ if(state==="title") $("says").textContent=pick(lines); },3800);
+  setInterval(()=>{ if(state==="title"&&!document.body.classList.contains("hush")) $("says").textContent=pick(lines); },3800);
 })();
 
 /* ---------- audio + asset discovery ---------- */
@@ -134,6 +134,20 @@ function nextMsg(){
   const all=(CFG.deathMessages&&CFG.deathMessages.length)?CFG.deathMessages:["Ghee khatam"];
   if(!msgBag.length){ msgBag=all.slice().sort(()=>Math.random()-.5); if(msgBag.length>1&&msgBag[msgBag.length-1]===lastMsg) msgBag.unshift(msgBag.pop()); }
   lastMsg=msgBag.pop(); return lastMsg;
+}
+
+/* ---------- hidden surprise (name stored only as a scrambled number) ---------- */
+const SECRET=[417604001];
+function nameHash(s){ let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0; return h; }
+function isHer(name){ return String(name||"").toLowerCase().split(/[^a-z]+/).some(w=>w&&SECRET.indexOf(nameHash(w.replace(/(.)\1+/g,"$1")))>=0); }
+let HER=false, herFirst=true, herSparkT=0;
+const KIND=["Ganne ka juice peelo, thoda chill karo 🥤","Ahmed bhai ki chaat try karo, trust me 🍛","Aaj mood acha hai. Daviccino khush hai ✨","Sab meri maaya hai, par tu special hai 🌀","Main sab dekhta hoon. Tu kar lega 🌙","Round mein darr mat, shield tere saath hai 🛡️"];
+const SOFT=["Koi na, next round teri ✨","Ek aur try? Daviccino tere saath hai 🌙","Arre rukna nahi, tu kar lega 💫","Sab theek hai, bas ek aur baar ✨","Itna bhi kya, chal phir se 🌙"];
+function herLobbyIntro(){
+  if(!HER||!herFirst) return; herFirst=false;
+  if(hub&&hub.davi&&hub.davi.aura) hub.davi.aura.material.color.set(0xffd9a0);
+  setTimeout(()=>{ if(state==="lobby") daviSay("Oh. You came. ✨"); },1800);
+  setTimeout(()=>{ if(state==="lobby") daviSay("Take your time. The lobby's yours tonight 🌙","come say hi, if you want"); },7500);
 }
 
 /* ---------- leaderboard ---------- */
@@ -269,7 +283,7 @@ function updateChasers(dt){
         if(r.shield>0){
           r.shield=0; r.invuln=1.3; const m=Math.hypot(dx,dz)||1; c.x-=dx/m*5; c.z-=dz/m*5;
           emit(r.x,1.5,r.z,40,0x4de1ff,7,.9,3,2); feed(r.name+"'s shield broke 🛡️");
-          if(r.isPlayer){ daviSay("Shield saved you. You're welcome 😎"); synth(880,.15,"triangle",.08,440); }
+          if(r.isPlayer){ daviSay(HER?"Not today. ✨":"Shield saved you. You're welcome 😎"); synth(880,.15,"triangle",.08,440); }
           continue;
         }
         kill(r); break;
@@ -289,7 +303,7 @@ const EVENTS=[
 ];
 function daviEvent(){ const order=EVENTS.slice().sort(()=>Math.random()-.5); for(const f of order) if(f()) return; }
 function daviLobbyPopup(){
-  const line=pick(CFG.daviccinoLines);
+  const line=HER?pick(KIND):pick(CFG.daviccinoLines);
   daviSay(line,Math.random()<.3?"follow @"+CFG.insta:"");
   emit(0,3.6,0,36,null,6,1.5,5,5);
   if(Math.random()<.5) BB.bubble(0,6,0,line,"#ff3df0");
@@ -300,7 +314,7 @@ function enterLobby(){
   state="lobby"; gameFinished=results.length>=CFG.roundsPerGame;
   timer=CFG.lobbySeconds; clearChasers(); BB.clearBubbles();
   nextDef=nextMapDef(); prebuilt=false; showEnv("hub"); placeRunners("hub");
-  used.juice=used.chaat=used.davi=false; daviT=2.2;
+  used.juice=used.chaat=used.davi=false; daviT=2.2; herLobbyIntro();
   camYaw=0; camPitch=.5; camDistT=TOUCH?13:11;
   updateLB(); syncLB(); statsEl.style.display="none"; bannerEl.style.display="none";
   if(gameFinished&&results.length){
@@ -316,6 +330,7 @@ function startRound(){
   runners.forEach(r=>{ r.pts=0; r.shield=0; r.invuln=0; r.juiceT=0; r.bonus=0; });
   if(player){ player.juiceT=buff.juice?14:0; player.shield=buff.shield?1:0; player.bonus=buff.bless?5:0; }
   buff={juice:false,shield:false,bless:false};
+  if(player&&HER) player.shield=1;
   clearChasers(); BB.clearBubbles(); for(let i=0;i<3;i++) spawnChaser();
   syncLB(); promptEl.style.display="none"; statsEl.style.display="block";
   const S=CFG.sounds;
@@ -326,7 +341,7 @@ function kill(r){
   if(!r.alive) return;
   r.alive=false; r.pts=Math.floor(roundT);
   r.av.group.rotation.z=PI/2; r.av.group.position.y=.6; r.av.legL.rotation.x=r.av.legR.rotation.x=0; r.av.shield.visible=false;
-  const msg=nextMsg();
+  const msg=(r.isPlayer&&HER)?pick(SOFT):nextMsg();
   feed(r.name+": "+msg); BB.bubble(r.x,3.6,r.z,msg,"#ff4d6d");
   emit(r.x,1.5,r.z,45,0xff4d6d,7,1,8,3); emit(r.x,1.8,r.z,18,0xffe066,5,1.2,6,3);
   if(r.isPlayer){ showDeath(msg,r.pts); if(!playFrom(SND.death)) synth(300,.45,"sawtooth",.12,70); } else synth(220,.12,"square",.04,120);
@@ -360,7 +375,7 @@ function interact(){
     used.chaat=true; buff.shield=true; BB.bubble(sx,4.6,sz,"Ahmed Bhai: teekha kam, shield zyada 🛡️","#ffcf3a");
     emit(player.x,1.5,player.z,34,0xffcf3a,5,1,2,3); daviSay("Chaat shield equipped 🛡️","survives one touch next round"); synth(520,.14,"triangle",.08,820);
   } else if(id==="davi"){
-    if(!used.davi){ used.davi=true; buff.bless=true; daviSay("You have my blessing 🙏","+5 aura points next round"); emit(0,3.6,0,60,null,8,1.5,5,5); BB.bubble(0,6,0,"R = Rizz. Go forth. 😎","#ff3df0"); synth(500,.2,"triangle",.09,1200); }
+    if(!used.davi){ used.davi=true; buff.bless=true; daviSay("You have my blessing 🙏","+5 aura points next round"); emit(0,3.6,0,60,null,8,1.5,5,5); BB.bubble(0,6,0,HER?"Some letters don't need explaining 🌙":"R = Rizz. Go forth. 😎","#ff3df0"); synth(500,.2,"triangle",.09,1200); }
     else daviLobbyPopup();
   }
 }
@@ -438,6 +453,7 @@ function frame(t){
     timer-=dt;
     if(!prebuilt&&timer<CFG.lobbySeconds-3){ prebuilt=true; getMap(nextDef); }
     daviT-=dt; if(daviT<=0){ daviT=rnd(6,11); daviLobbyPopup(); }
+    if(HER){ herSparkT-=dt; if(herSparkT<=0){ herSparkT=rnd(.9,1.7); emit(rnd(-1.2,1.2),rnd(2.2,4),rnd(-1.2,1.2),5,0xffe9b0,.8,1.4,-.5,1.2); } }
     if(timer<=0) startRound();
   } else if(state==="play"){
     if(grace>0){
@@ -528,6 +544,13 @@ for(let i=0;i<CFG.botCount;i++){
 }
 placeRunners("hub"); setTitleOffset(true); BB.resize();
 try{ $("nameIn").value=localStorage.getItem("bb3d-name")||""; }catch(e){}
+let titleHer=false;
+function titleReact(){
+  const on=isHer($("nameIn").value);
+  if(on&&!titleHer){ titleHer=true; $("says").textContent="…oh. hi. ✨"; document.body.classList.add("hush"); setTimeout(()=>{ if(titleHer&&state==="title") $("says").textContent="Daviccino was hoping you'd show up."; },2600); }
+  else if(!on&&titleHer){ titleHer=false; document.body.classList.remove("hush"); }
+}
+$("nameIn").addEventListener("input",titleReact); titleReact();
 hintEl.textContent=TOUCH?"Left stick: move · Drag: camera · Pinch: zoom · Tap the button near stalls":"WASD move · Space jump · Drag: camera · Scroll: zoom · Q/R rotate · E interact";
 discoverAll().then(buildChaserMats).then(applyDaviFace).then(()=>{ $("play").disabled=false; $("play").textContent="PLAY"; });
 $("play").onclick=()=>{
@@ -537,7 +560,7 @@ $("play").onclick=()=>{
   try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); if(actx.resume) actx.resume(); }catch(e){}
   synth(440,.08,"square",.04);
   $("title").style.display="none"; $("hud").style.display="block"; setTitleOffset(false);
-  player=mkRunner(nm,true,0); runners.push(player); results=[];
+  HER=isHer(nm); player=mkRunner(nm,true,0); runners.push(player); results=[];
   enterLobby(); hintEl.style.opacity="1"; hintT=0; cv.focus();
   daviSay("Welcome to my lobby, "+nm+". Explore. Eat. Behave. 😎","@"+CFG.insta);
 };
