@@ -54,12 +54,24 @@ async function discoverAll(){
   const r=await Promise.all([discover("assets/faces","img"),discover("assets/sounds/start","snd"),discover("assets/sounds/death","snd"),discover("assets/sounds/random","snd"),discover("assets/sounds/daviccino","snd"),discover("assets/daviccino","img",1)]);
   FACE_URLS=r[0]; SND.start=r[1]; SND.death=r[2]; SND.random=r[3]; SND.davi=r[4]; DAVI_URL=r[5][0]||null;
 }
-function cropToCanvas(img,size){ const c=document.createElement("canvas"); c.width=c.height=size; const g=c.getContext("2d"); const s=Math.min(img.width,img.height); g.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,size,size); return c; }
+function cropToCanvas(img,size){
+  /* square crop; for tall (portrait) photos favour the top so heads stay in frame instead of the middle of the body */
+  const c=document.createElement("canvas"); c.width=c.height=size; const g=c.getContext("2d");
+  const s=Math.min(img.width,img.height), sx=(img.width-s)/2, sy=img.height>img.width?(img.height-s)*.18:(img.height-s)/2;
+  g.drawImage(img,sx,sy,s,s,0,0,size,size); return c;
+}
+let DAVI_PIC=null;   // small square data-URL of Daviccino's photo, used by popups and the title page
 async function applyDaviFace(){
   if(!DAVI_URL) return;
   const im=await loadImg(DAVI_URL); if(!im) return;
-  const tex=new T.CanvasTexture(cropToCanvas(im,256));
-  hub.davi.face.material=new T.MeshBasicMaterial({map:tex,transparent:true}); hub.davi.face.scale.set(1.1,1.4,1);
+  const cv256=cropToCanvas(im,256);
+  try{ DAVI_PIC=cropToCanvas(im,128).toDataURL("image/jpeg",.85); }catch(e){ DAVI_PIC=DAVI_URL; }
+  const tp=document.querySelector("#title .says .pic");
+  if(tp){ tp.textContent=""; tp.style.background="url('"+DAVI_PIC+"') center/cover"; tp.style.width=tp.style.height="44px"; tp.style.border="2px solid #fff"; }
+  try{
+    const tex=new T.CanvasTexture(cv256);
+    hub.davi.face.material=new T.MeshBasicMaterial({map:tex,transparent:true}); hub.davi.face.scale.set(1.1,1.4,1);
+  }catch(e){}
 }
 
 /* chaser textures */
@@ -112,7 +124,7 @@ function showDeath(msg,pts){
 function showBanner(html,ms){ bannerEl.innerHTML=html; bannerEl.style.display="block"; clearTimeout(bannerTimer); if(ms) bannerTimer=setTimeout(()=>{ bannerEl.style.display="none"; },ms); }
 function daviSay(text,sub){
   const box=$("davi"), el=document.createElement("div"); el.className="dv";
-  el.innerHTML='<div class="pic"'+(DAVI_URL?' style="background-image:url(\''+DAVI_URL+'\')"':'')+'>'+(DAVI_URL?'':'R')+'</div><div><b>DAVICCINO</b><span>'+esc(text)+'</span>'+(sub?'<em>'+esc(sub)+'</em>':'')+'</div>';
+  el.innerHTML='<div class="pic"'+(DAVI_PIC?' style="background-image:url(\''+DAVI_PIC+'\')"':'')+'>'+(DAVI_PIC?'':'R')+'</div><div><b>DAVICCINO</b><span>'+esc(text)+'</span>'+(sub?'<em>'+esc(sub)+'</em>':'')+'</div>';
   box.appendChild(el); while(box.children.length>3) box.removeChild(box.firstChild);
   setTimeout(()=>{ el.classList.add("out"); setTimeout(()=>{ if(el.parentNode) el.parentNode.removeChild(el); },420); },4300);
   if(!playFrom(SND.davi)) synth(660,.12,"triangle",.06,990);
