@@ -3,6 +3,7 @@
 //
 //  ADD IMAGES  (the floating squares that chase you):
 //    Put pictures in  assets/faces/  named  1.jpg  2.jpg  3.png ...  (in order, no gaps)
+//    There are always at least 10 different squares; missing numbers get a placeholder.
 //
 //  DAVICCINO'S FACE (optional):
 //    Put ONE picture in  assets/daviccino/  named  1.jpg  (or png/webp). It becomes
@@ -12,6 +13,7 @@
 //    assets/sounds/start/      plays when a round starts
 //    assets/sounds/death/      plays when YOU die
 //    assets/sounds/random/     plays now and then during a round
+//    assets/sounds/faces/      sound N plays when square N (assets/faces/N.jpg) gets someone
 //    assets/sounds/daviccino/  plays whenever Daviccino pops up
 //    A random file from the folder is picked each time.
 //
@@ -28,6 +30,11 @@ window.GAME_CONFIG = {
   roundSeconds: 35,           // length of one round
   lobbySeconds: 40,           // time everyone hangs out in the lobby before each round
   roundsPerGame: 3,           // leaderboard shows this many rounds, then resets
+  squaresStart: 8,       // chasing squares at round start (10+ different faces exist)
+  squaresMax: 14,        // most squares at once
+  squaresRampEvery: 5,   // +1 square every N seconds
+  mpBots: 4,             // fake players kept in a multiplayer room
+  // iceServers: [{urls:"stun:stun.l.google.com:19302"}, {urls:"turn:YOUR_TURN",username:"u",credential:"p"}],  // optional: add a TURN server if friends on strict networks can't connect
   botCount: 7,                // fake players
 
   // A different message is shown every time anyone dies (all get used before any repeats).

@@ -31,3 +31,15 @@ Keep images small (a few hundred KB) so phones load fast.
 
 ## Put it online with GitHub Pages
 Repo **Settings > Pages**: Source = *Deploy from a branch*, Branch = `main`, folder = `/ (root)`.
+
+
+## Bigger arena, 10+ squares, per-square sounds
+- There are always at least 10 different squares (8 at round start, growing to 14). Change `squaresStart`, `squaresMax`, `squaresRampEvery` in `config.js`.
+- Square N uses `assets/faces/N.jpg` and its own death sound `assets/sounds/faces/N.mp3` (mp3/ogg/wav/m4a). Missing face = emoji placeholder; missing sound = a unique synth blip.
+
+## Multiplayer (room code)
+1. One player types a name and taps **CREATE ROOM** -> gets a 5-letter code (tap the ROOM chip to copy an invite link).
+2. Others type the code (or open the `?room=CODE` link) and tap **JOIN**.
+- Up to 8 humans per room, plus `mpBots` fake players. The host's browser runs the game; if the host leaves, the room ends.
+- Joining mid-round waits for the next lobby. Uses the free public PeerJS server (WebRTC); players on very strict networks may need a TURN server (`iceServers` in `config.js`).
+- Admin commands only work for the host.

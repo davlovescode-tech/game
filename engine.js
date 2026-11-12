@@ -72,10 +72,14 @@ const starGeo=new T.BufferGeometry(); starGeo.setAttribute("position",new T.Buff
 const stars=new T.Points(starGeo,new T.PointsMaterial({color:0xffffff,size:1.7,sizeAttenuation:false,fog:false,transparent:true,opacity:.9,depthWrite:false}));
 stars.frustumCulled=false; scene.add(stars);
 scene.fog=new T.Fog(0x000000,40,120);
+let sunOff=[-26,30,18];
+/* keep the shadow box centred on the action so shadows stay sharp on the big arena */
+BB.sunFollow=function(x,z){ const sx=Math.round(x/3)*3, sz=Math.round(z/3)*3; sun.target.position.set(sx,0,sz); sun.position.set(sx+sunOff[0],sunOff[1],sz+sunOff[2]); };
 BB.setLook=function(L){
   skyMat.uniforms.top.value.set(L.top); skyMat.uniforms.bot.value.set(L.bot);
   hemi.color.set(L.hs); hemi.groundColor.set(L.hg); hemi.intensity=L.hi;
   sun.color.set(L.sc); sun.intensity=L.si; sun.position.set(L.sp[0],L.sp[1],L.sp[2]);
+  sunOff=[L.sp[0],L.sp[1],L.sp[2]];
   scene.fog.color.set(L.bot); scene.fog.near=L.fn; scene.fog.far=L.ff;
   stars.visible=!!L.stars;
 };

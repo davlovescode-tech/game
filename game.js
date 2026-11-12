@@ -36,23 +36,26 @@ function playFrom(list){
   try{ const a=new Audio(pick(list)); a.volume=0.9; const p=a.play(); if(p&&p.catch) p.catch(()=>{}); return true; }catch(e){ return false; }
 }
 const IMG_EXT=["jpg","jpeg","png","webp","gif"], SND_EXT=["mp3","ogg","wav","m4a"];
-let FACE_URLS=[], DAVI_URL=null, SND={start:[],death:[],random:[],davi:[]};
+let FACE_URLS=[], FACE_SND=[], DAVI_URL=null, SND={start:[],death:[],random:[],davi:[]};
 function loadImg(src){ return new Promise(res=>{ const im=new Image(); im.crossOrigin="anonymous"; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; }); }
 async function probeSound(url){
   try{ const r=await fetch(url,{method:"HEAD"}); const t=r.headers.get("content-type")||""; return (r.ok&&/audio|ogg|octet|video/i.test(t))?url:null; }catch(e){ return null; }
 }
-async function discover(folder,kind,max){
+async function discover(folder,kind,max,keep){
+  /* keep=true: slot N of the result is file N (null when missing) so face 3 and sound 3 always pair up */
   const found=[]; let miss=0;
   for(let i=1;i<=(max||60)&&miss<3;i++){
     const urls=(kind==="img"?IMG_EXT:SND_EXT).map(e=>folder+"/"+i+"."+e);
     const res=await Promise.all(urls.map(u=>kind==="img"?loadImg(u).then(im=>im?u:null):probeSound(u)));
-    const hit=res.find(Boolean); if(hit){ found.push(hit); miss=0; } else miss++;
+    const hit=res.find(Boolean);
+    if(hit){ found.push(hit); miss=0; } else { miss++; if(keep) found.push(null); }
   }
+  if(keep) while(found.length&&!found[found.length-1]) found.pop();
   return found;
 }
 async function discoverAll(){
-  const r=await Promise.all([discover("assets/faces","img"),discover("assets/sounds/start","snd"),discover("assets/sounds/death","snd"),discover("assets/sounds/random","snd"),discover("assets/sounds/daviccino","snd"),discover("assets/daviccino","img",1)]);
-  FACE_URLS=r[0]; SND.start=r[1]; SND.death=r[2]; SND.random=r[3]; SND.davi=r[4]; DAVI_URL=r[5][0]||null;
+  const r=await Promise.all([discover("assets/faces","img",60,true),discover("assets/sounds/start","snd"),discover("assets/sounds/death","snd"),discover("assets/sounds/random","snd"),discover("assets/sounds/daviccino","snd"),discover("assets/daviccino","img",1),discover("assets/sounds/faces","snd",60,true)]);
+  FACE_URLS=r[0]; SND.start=r[1]; SND.death=r[2]; SND.random=r[3]; SND.davi=r[4]; DAVI_URL=r[5][0]||null; FACE_SND=r[6];
 }
 function cropToCanvas(img,size){
   /* square crop; for tall (portrait) photos favour the top so heads stay in frame instead of the middle of the body */
@@ -82,8 +85,9 @@ function placeholderCanvas(i){
 }
 let chaserMats=[];
 async function buildChaserMats(){
-  const canv=[]; for(const s of FACE_URLS){ const im=await loadImg(s); if(im) canv.push(cropToCanvas(im,256)); }
-  if(!canv.length) for(let i=0;i<6;i++) canv.push(placeholderCanvas(i));
+  /* one variant per face number; never fewer than 10 so there are always 10+ different squares */
+  const n=Math.max(10,FACE_URLS.length), canv=[];
+  for(let i=0;i<n;i++){ const im=FACE_URLS[i]?await loadImg(FACE_URLS[i]):null; canv.push(im?cropToCanvas(im,256):placeholderCanvas(i)); }
   chaserMats=canv.map(c=>{ const t=new T.CanvasTexture(c); t.anisotropy=4; return new T.MeshBasicMaterial({map:t}); });
 }
 
@@ -96,8 +100,15 @@ const built={}, used={juice:false,chaat:false,davi:false};
 let buff={juice:false,shield:false,bless:false};
 let mapQueue=[];
 const nextMapDef=()=>{ if(!mapQueue.length) mapQueue=W.MAPS.slice().sort(()=>Math.random()-.5); return mapQueue.pop(); };
+/* maps are built from a fixed seed so every player in a room gets the identical layout */
+function seeded(seed,fn){
+  const old=Math.random; let a=seed>>>0;
+  Math.random=function(){ a=(a+0x6D2B79F5)|0; let t=Math.imul(a^(a>>>15),1|a); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; };
+  try{ return fn(); } finally{ Math.random=old; }
+}
+const keySeed=k=>{ let h=2166136261; for(let i=0;i<k.length;i++) h=Math.imul(h^k.charCodeAt(i),16777619); return h>>>0; };
 function getMap(def){
-  if(!built[def.key]){ const m=def.build(); m.group.visible=false; scene.add(m.group); built[def.key]=m; }
+  if(!built[def.key]){ const m=seeded(keySeed(def.key),()=>def.build()); m.group.visible=false; scene.add(m.group); built[def.key]=m; }
   return built[def.key];
 }
 function showEnv(which){
@@ -168,10 +179,10 @@ function syncLB(){ lbEl.style.display=(state==="lobby"&&lbOpen)?"block":"none"; 
 $("boardBtn").onclick=()=>{ lbOpen=!lbOpen; syncLB(); };
 
 /* ---------- runners ---------- */
-function mkRunner(name,isYou,i){
-  const look=isYou?{shirt:0xffb703,pants:0x2a3050,skin:0xe0ac69,hair:0x111111,face:0,shades:false}:BB.randomLook(i);
+function mkRunner(name,isYou,i,id,look0){
+  const look=look0||(isYou?{shirt:0xffb703,pants:0x2a3050,skin:0xe0ac69,hair:0x111111,face:0,shades:false}:BB.randomLook(i));
   const av=BB.makeAvatar(Object.assign({name:name,isYou:isYou},look)); scene.add(av.group);
-  return {id:isYou?"you":"bot"+i,name:name,isPlayer:isYou,av:av,x:0,z:0,y:0,vy:0,yaw:0,alive:true,pts:0,moving:0,speed:isYou?8.2:rnd(6.7,7.7),skill:rnd(.35,.95),
+  return {id:id||(isYou?"you":"bot"+i),look:look,name:name,isPlayer:isYou,av:av,x:0,z:0,y:0,vy:0,yaw:0,alive:true,pts:0,moving:0,speed:isYou?8.2:rnd(6.7,7.7),skill:rnd(.35,.95),
     wx:0,wz:0,wanderT:0,thinkT:0,jumpCd:0,wantJump:false,shield:0,invuln:0,juiceT:0,bonus:0,tgt:null,idleT:rnd(0,2),rt:0};
 }
 function resolve(r){
@@ -194,6 +205,7 @@ function placeRunners(where){
     r.x=x; r.z=z; r.y=0; r.vy=0; r.alive=true; r.placed=true; r.tgt=null; r.idleT=rnd(0,2);
     r.yaw=where==="hub"?PI:rnd(0,PI*2);
     r.av.group.rotation.set(0,r.yaw,0); r.av.group.position.set(x,0,z); r.av.shield.visible=false;
+    if(r.ghost){ r.nx=r.x; r.nz=r.z; r.ny=0; r.nyaw=r.yaw; r.nmv=0; }
   });
 }
 function stepRunner(r,dt,wx,wz,jump){
@@ -202,11 +214,21 @@ function stepRunner(r,dt,wx,wz,jump){
   resolve(r);
   if(jump&&r.y<=.001&&r.vy===0) r.vy=11;
   r.vy-=26*(gravT>0?.5:1)*dt; r.y+=r.vy*dt; if(r.y<=0){ r.y=0; if(r.vy<0) r.vy=0; }
+  poseRunner(r,dt);
+}
+function poseRunner(r,dt){
   const a=r.av; a.group.position.set(r.x,r.y,r.z);
   let d=r.yaw-a.group.rotation.y; d=Math.atan2(Math.sin(d),Math.cos(d)); a.group.rotation.y+=d*Math.min(1,dt*12);
   const sw=Math.sin(time*11)*.9*r.moving*(r.y>.05?.3:1);
   a.legL.rotation.x=sw; a.legR.rotation.x=-sw; a.armL.rotation.x=-sw; a.armR.rotation.x=sw;
   a.shield.visible=r.shield>0; if(r.shield>0) a.shield.scale.setScalar(1+Math.sin(time*6)*.05);
+}
+/* remote players (and everything on a guest's screen) just follow the last network position */
+function ghostStep(r,dt){
+  const k=Math.min(1,dt*11);
+  if(r.nx===undefined){ r.nx=r.x; r.ny=r.y; r.nz=r.z; r.nyaw=r.yaw; r.nmv=0; }
+  r.x+=(r.nx-r.x)*k; r.z+=(r.nz-r.z)*k; r.y+=(r.ny-r.y)*k; r.yaw=r.nyaw; r.moving=r.nmv;
+  poseRunner(r,dt);
 }
 function lobbyAI(r,dt){
   r.idleT-=dt;
@@ -245,61 +267,90 @@ function botThink(r,dt){
 let chasers=[];
 const frameMat=BB.M(0xffd23f,{m:.8,r:.3,e:.3});
 const shadowMat=new T.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.35,depthWrite:false});
+const SQ_W=3.6, SQ_Y=2.5, SQ_HIT=1.5;   // square size, hover height, touch radius
+let sqBag=[];
+function nextSquare(){ if(!sqBag.length) sqBag=chaserMats.map((_,i)=>i).sort(()=>Math.random()-.5); return sqBag.pop(); }
+/* each square has its own death sound: assets/sounds/faces/N.mp3, else its own synth blip */
+function squareSound(i){
+  const u=FACE_SND[i];
+  if(u){ try{ const a=new Audio(u); a.volume=.95; const p=a.play(); if(p&&p.catch) p.catch(()=>{}); return; }catch(e){} }
+  const w=["square","sawtooth","triangle","sine"][i%4];
+  synth(180+(i*53)%520,.35,w,.1,60+(i*37)%260);
+}
+function createChaser(idx,x,z){
+  const mat=chaserMats[idx%chaserMats.length], g=new T.Group();
+  const fr=new T.Mesh(BB.BX(SQ_W,SQ_W,.3),frameMat); fr.castShadow=true; g.add(fr);
+  const pw=SQ_W-.36;
+  const pf=new T.Mesh(new T.PlaneGeometry(pw,pw),mat); pf.position.z=.17; g.add(pf);
+  const pb=new T.Mesh(new T.PlaneGeometry(pw,pw),mat); pb.position.z=-.17; pb.rotation.y=PI; g.add(pb);
+  const glow=BB.glowSprite(0xff3040,SQ_W*2.5,.5); glow.position.z=-.5; g.add(glow);
+  const sh=new T.Mesh(new T.CircleGeometry(1.5,16),shadowMat); sh.rotation.x=-PI/2; sh.position.y=.04; scene.add(sh);
+  g.position.set(x,SQ_Y,z); scene.add(g);
+  const c={g:g,sh:sh,glow:glow,idx:idx,x:x,z:z,tx:x,tz:z,phase:Math.random()*6,lunge:rnd(2,6),lungeT:0,spd:rnd(-.4,.4)};
+  chasers.push(c); return c;
+}
 function spawnChaser(){
   if(!chaserMats.length) return;
-  const mat=pick(chaserMats), g=new T.Group();
-  const fr=new T.Mesh(BB.BX(2.1,2.1,.18),frameMat); fr.castShadow=true; g.add(fr);
-  const pf=new T.Mesh(new T.PlaneGeometry(1.8,1.8),mat); pf.position.z=.1; g.add(pf);
-  const pb=new T.Mesh(new T.PlaneGeometry(1.8,1.8),mat); pb.position.z=-.1; pb.rotation.y=PI; g.add(pb);
-  const glow=BB.glowSprite(0xff3040,5.2,.5); glow.position.z=-.3; g.add(glow);
-  const sh=new T.Mesh(new T.CircleGeometry(.9,16),shadowMat); sh.rotation.x=-PI/2; sh.position.y=.04; scene.add(sh);
+  const idx=nextSquare();
   let x=0,z=0;
-  for(let t=0;t<20;t++){ const a=Math.random()*PI*2; x=Math.cos(a)*(H-1); z=Math.sin(a)*(H-1); if(runners.every(r=>!r.alive||Math.hypot(r.x-x,r.z-z)>14)) break; }
-  g.position.set(x,1.3,z); scene.add(g);
-  chasers.push({g:g,sh:sh,glow:glow,x:x,z:z,phase:Math.random()*6,lunge:rnd(2,6),lungeT:0,spd:rnd(-.4,.4)});
+  for(let t=0;t<20;t++){ const a=Math.random()*PI*2; x=Math.cos(a)*(H-1.5); z=Math.sin(a)*(H-1.5); if(runners.every(r=>!r.alive||Math.hypot(r.x-x,r.z-z)>18)) break; }
+  createChaser(idx,x,z);
+}
+function poseChaser(c,best,frozen){
+  const bob=SQ_Y+Math.sin(time*3+c.phase)*.3;
+  c.g.position.set(c.x,bob,c.z); if(best) c.g.lookAt(best.x,bob,best.z);
+  c.sh.position.set(c.x,.04,c.z); c.sh.scale.setScalar(1-(bob-SQ_Y)*.2);
+  c.glow.material.color.set(frozen?0x7fd8ff:(hyperT>0?0xffe040:0xff3040));
+}
+function nearestAlive(x,z){ let best=null,bd=1e9; for(const r of runners){ if(!r.alive) continue; const d=Math.hypot(r.x-x,r.z-z); if(d<bd){ bd=d; best=r; } } return best; }
+/* guest side: squares are puppets driven by the host's snapshots */
+function ghostChasers(dt){
+  const k=Math.min(1,dt*10);
+  chasers.forEach(c=>{ c.x+=(c.tx-c.x)*k; c.z+=(c.tz-c.z)*k; poseChaser(c,nearestAlive(c.x,c.z),freezeT>0); });
+}
+function shieldBreak(r){
+  emit(r.x,1.5,r.z,40,0x4de1ff,7,.9,3,2); feed(r.name+"'s shield broke 🛡️");
+  if(r.isPlayer){ daviSay(HER?"Not today. ✨":"Shield saved you. You're welcome 😎"); synth(880,.15,"triangle",.08,440); }
 }
 function clearChasers(){ chasers.forEach(c=>{ scene.remove(c.g); scene.remove(c.sh); }); chasers=[]; }
 function updateChasers(dt){
   const alive=runners.filter(r=>r.alive);
-  const want=Math.min(7,3+Math.floor(roundT/8));
+  const want=Math.min(CFG.squaresMax||14,(CFG.squaresStart||8)+Math.floor(roundT/(CFG.squaresRampEvery||5)));
   while(chasers.length<want) spawnChaser();
   const base=Math.min(6.9,4.4+roundT*.05)*(hyperT>0?1.3:1), frozen=freezeT>0;
   chasers.forEach((c,i)=>{
     let best=null,bd=1e9; for(const r of alive){ const d=Math.hypot(r.x-c.x,r.z-c.z); if(d<bd){ bd=d; best=r; } }
     c.lunge-=dt; if(c.lunge<=0){ c.lungeT=.6; c.lunge=rnd(5,9); } if(c.lungeT>0) c.lungeT-=dt;
     if(best&&!frozen&&grace<=0){ const dx=best.x-c.x, dz=best.z-c.z, m=Math.hypot(dx,dz)||1, sp=(base+c.spd)*(c.lungeT>0?1.6:1); c.x+=dx/m*sp*dt; c.z+=dz/m*sp*dt; }
-    for(let j=0;j<i;j++){ const o=chasers[j], ax=c.x-o.x, az=c.z-o.z, d=Math.hypot(ax,az); if(d<1.9&&d>.001){ const p=(1.9-d)/2; c.x+=ax/d*p; c.z+=az/d*p; o.x-=ax/d*p; o.z-=az/d*p; } }
-    const bob=1.3+Math.sin(time*3+c.phase)*.22;
-    c.g.position.set(c.x,bob,c.z); if(best) c.g.lookAt(best.x,bob,best.z);
-    c.sh.position.set(c.x,.04,c.z); c.sh.scale.setScalar(1-(bob-1.1)*.25);
-    c.glow.material.color.set(frozen?0x7fd8ff:(hyperT>0?0xffe040:0xff3040));
+    for(let j=0;j<i;j++){ const o=chasers[j], ax=c.x-o.x, az=c.z-o.z, d=Math.hypot(ax,az); if(d<3.4&&d>.001){ const p=(3.4-d)/2; c.x+=ax/d*p; c.z+=az/d*p; o.x-=ax/d*p; o.z-=az/d*p; } }
+    poseChaser(c,best,frozen);
   });
   if(grace>0||state!=="play") return;
   for(const r of alive){
     for(const c of chasers){
       const dx=r.x-c.x, dz=r.z-c.z;
-      if(dx*dx+dz*dz<.95*.95&&r.y<2){
+      if(dx*dx+dz*dz<SQ_HIT*SQ_HIT&&r.y<2){
         if(r.invuln>0) continue;
         if(r.shield>0){
-          r.shield=0; r.invuln=1.3; const m=Math.hypot(dx,dz)||1; c.x-=dx/m*5; c.z-=dz/m*5;
-          emit(r.x,1.5,r.z,40,0x4de1ff,7,.9,3,2); feed(r.name+"'s shield broke 🛡️");
-          if(r.isPlayer){ daviSay(HER?"Not today. ✨":"Shield saved you. You're welcome 😎"); synth(880,.15,"triangle",.08,440); }
+          r.shield=0; r.invuln=1.3; const m=Math.hypot(dx,dz)||1; c.x-=dx/m*7; c.z-=dz/m*7;
+          shieldBreak(r); bc({t:"sh",id:r.id});
           continue;
         }
-        kill(r); break;
+        kill(r,c); break;
       }
     }
   }
 }
 
 /* ---------- Daviccino's powers (rounds) ---------- */
+function dvAll(text,sub){ bc({t:"dv",text:text,sub:sub||""}); daviSay(text,sub); }
 const EVENTS=[
-  ()=>{ const a=runners.filter(r=>r.alive&&!r.shield); if(!a.length) return false; const r=pick(a); r.shield=1; daviSay(r.isPlayer?"Daviccino blessed YOU with a shield 🛡️":"Daviccino blessed "+r.name+" with a shield 🛡️"); emit(r.x,1.5,r.z,30,0x4de1ff,5,1,2,2); return true; },
-  ()=>{ freezeT=3; daviSay("FREEZE ❄️ The squares obey me.","3 seconds of peace"); chasers.forEach(c=>emit(c.x,1.3,c.z,14,0x9fe8ff,4,1,2,1)); return true; },
-  ()=>{ spawnChaser(); spawnChaser(); daviSay("I got bored. +2 squares 😈"); return true; },
-  ()=>{ gravT=10; daviSay("Low gravity 🌙 by order of Daviccino","10s · jump higher"); return true; },
-  ()=>{ hyperT=6; daviSay("Squares drank energy drinks ⚡","6s of chaos"); return true; },
-  ()=>{ if(!player||!player.alive) return false; player.bonus+=5; daviSay("Gift for you: +5 aura points 🎁","@"+CFG.insta+" approves"); return true; }
+  ()=>{ const a=runners.filter(r=>r.alive&&!r.shield); if(!a.length) return false; const r=pick(a); r.shield=1; dvAll(r.isPlayer?"Daviccino blessed YOU with a shield 🛡️":"Daviccino blessed "+r.name+" with a shield 🛡️"); emit(r.x,1.5,r.z,30,0x4de1ff,5,1,2,2); return true; },
+  ()=>{ freezeT=3; dvAll("FREEZE ❄️ The squares obey me.","3 seconds of peace"); chasers.forEach(c=>emit(c.x,SQ_Y,c.z,14,0x9fe8ff,4,1,2,1)); return true; },
+  ()=>{ spawnChaser(); spawnChaser(); dvAll("I got bored. +2 squares 😈"); return true; },
+  ()=>{ gravT=10; dvAll("Low gravity 🌙 by order of Daviccino","10s · jump higher"); return true; },
+  ()=>{ hyperT=6; dvAll("Squares drank energy drinks ⚡","6s of chaos"); return true; },
+  ()=>{ if(!player||!player.alive) return false; player.bonus+=5; dvAll("Gift for you: +5 aura points 🎁","@"+CFG.insta+" approves"); return true; }
 ];
 function daviEvent(){ const order=EVENTS.slice().sort(()=>Math.random()-.5); for(const f of order) if(f()) return; }
 function daviLobbyPopup(){
@@ -310,10 +361,10 @@ function daviLobbyPopup(){
 }
 
 /* ---------- game flow ---------- */
-function enterLobby(){
+function enterLobby(def){
   state="lobby"; gameFinished=results.length>=CFG.roundsPerGame;
   timer=CFG.lobbySeconds; clearChasers(); BB.clearBubbles();
-  nextDef=nextMapDef(); prebuilt=false; showEnv("hub"); placeRunners("hub");
+  nextDef=def||nextMapDef(); prebuilt=false; showEnv("hub"); placeRunners("hub");
   used.juice=used.chaat=used.davi=false; daviT=2.2; herLobbyIntro();
   camYaw=0; camPitch=.5; camDistT=TOUCH?13:11;
   updateLB(); syncLB(); statsEl.style.display="none"; bannerEl.style.display="none";
@@ -321,39 +372,49 @@ function enterLobby(){
     const w=totals()[0].r.name; daviSay("All hail "+w+" 👑 champion of this lobby!","new game starts after this lobby");
     for(let i=0;i<4;i++) setTimeout(()=>emit(rnd(-8,8),rnd(10,18),rnd(-8,8),70,null,10,1.6,5,0),i*350);
   }
+  if(isHost()){ flushPending(); bc(phaseMsg()); }
 }
-function startRound(){
+function startRound(sp){
   if(gameFinished){ results=[]; gameFinished=false; }
   curMap=getMap(nextDef); showEnv("arena");
   state="play"; timer=CFG.roundSeconds; roundT=0; grace=2.6; evT=rnd(8,12); freezeT=gravT=hyperT=0;
   placeRunners("arena");
+  if(sp) runners.forEach(r=>{ const q=sp[r.id]; if(q){ r.x=q[0]; r.z=q[1]; r.yaw=q[2]; r.av.group.position.set(r.x,0,r.z); r.av.group.rotation.y=r.yaw; } });
   runners.forEach(r=>{ r.pts=0; r.shield=0; r.invuln=0; r.juiceT=0; r.bonus=0; });
+  if(isHost()) runners.forEach(r=>{ if(r.remote&&r.buff){ r.juiceT=r.buff.juice?14:0; r.shield=r.buff.shield?1:0; r.bonus=r.buff.bless?5:0; r.buff=null; } });
   if(player){ player.juiceT=buff.juice?14:0; player.shield=buff.shield?1:0; player.bonus=buff.bless?5:0; }
   buff={juice:false,shield:false,bless:false};
   if(player&&HER) player.shield=1;
-  clearChasers(); BB.clearBubbles(); for(let i=0;i<3;i++) spawnChaser();
+  clearChasers(); BB.clearBubbles(); if(!isGuest()) for(let i=0;i<(CFG.squaresStart||8);i++) spawnChaser();
   syncLB(); promptEl.style.display="none"; statsEl.style.display="block";
   const S=CFG.sounds;
   if(SND.start.length){ if(Math.random()<S.randomChance) playFrom(SND.start); } else synth(520,.25,"triangle",.08,880);
   nextRandSound=rnd(S.randomEveryMin,S.randomEveryMax);
+  if(isHost()) bc(phaseMsg());
 }
-function kill(r){
+function kill(r,c,over,fromNet){
   if(!r.alive) return;
-  r.alive=false; r.pts=Math.floor(roundT);
+  r.alive=false; r.pts=fromNet?over.pts:Math.floor(roundT);
   r.av.group.rotation.z=PI/2; r.av.group.position.y=.6; r.av.legL.rotation.x=r.av.legR.rotation.x=0; r.av.shield.visible=false;
-  const msg=(r.isPlayer&&HER)?pick(SOFT):nextMsg();
+  const msg=(r.isPlayer&&HER)?pick(SOFT):(fromNet?over.msg:nextMsg());
+  if(!fromNet) bc({t:"k",id:r.id,msg:msg,pts:r.pts,ci:c?c.idx:-1});
   feed(r.name+": "+msg); BB.bubble(r.x,3.6,r.z,msg,"#ff4d6d");
   emit(r.x,1.5,r.z,45,0xff4d6d,7,1,8,3); emit(r.x,1.8,r.z,18,0xffe066,5,1.2,6,3);
-  if(r.isPlayer){ showDeath(msg,r.pts); if(!playFrom(SND.death)) synth(300,.45,"sawtooth",.12,70); } else synth(220,.12,"square",.04,120);
+  const hasOwn=c&&FACE_SND[c.idx];
+  if(r.isPlayer) showDeath(msg,r.pts);
+  if(c&&(hasOwn||!r.isPlayer||!SND.death.length)) squareSound(c.idx);   // the square that got you plays ITS sound
+  else if(r.isPlayer&&!playFrom(SND.death)) synth(300,.45,"sawtooth",.12,70);
 }
+let lastBanner="";
 function endRound(){
   state="results"; timer=5;
   const rec={}; runners.forEach(r=>{ if(r.alive) r.pts=Math.round(CFG.roundSeconds)+15; r.pts+=r.bonus; rec[r.id]=r.pts; });
   results.push(rec);
   const top=runners.slice().sort((a,b)=>b.pts-a.pts).slice(0,3);
-  showBanner("ROUND OVER<br><span style='font-size:.45em'>"+top.map((r,i)=>["🥇","🥈","🥉"][i]+" "+esc(r.name)+" "+r.pts).join(" &nbsp; ")+"</span>",4600);
+  const bn="ROUND OVER<br><span style='font-size:.45em'>"+top.map((r,i)=>["🥇","🥈","🥉"][i]+" "+esc(r.name)+" "+r.pts).join(" &nbsp; ")+"</span>";
+  showBanner(bn,4600); lastBanner=bn; if(isHost()) bc(phaseMsg());
   statsEl.style.display="none"; freezeT=gravT=hyperT=0;
-  if(Math.random()<.7) daviSay(pick(CFG.daviccinoLines));
+  if(Math.random()<.7) dvAll(pick(CFG.daviccinoLines));
 }
 
 /* ---------- lobby interactions ---------- */
@@ -365,6 +426,7 @@ function nearestSpot(){
 let nearSpot=null;
 function interact(){
   if(state!=="lobby"||!player||!nearSpot) return;
+  const was=JSON.stringify(buff); setTimeout(()=>{ if(isGuest()&&JSON.stringify(buff)!==was) net.toHost({t:"b",b:buff}); },0);
   const id=nearSpot.id, sx=nearSpot.x, sz=nearSpot.z;
   if(id==="juice"){
     if(used.juice){ BB.bubble(sx,4.6,sz,"Ganne Wale Bhaiya: ek hi glass, beta 😄","#b6ff4a"); return; }
@@ -423,7 +485,16 @@ function updateCamera(dt,tx,tz,ty){
   camX+=(tx-camX)*Math.min(1,dt*8); camZ+=(tz-camZ)*Math.min(1,dt*8); camDist+=(camDistT-camDist)*Math.min(1,dt*10);
   const cp=Math.cos(camPitch); let cx=camX+Math.sin(camYaw)*cp*camDist, cz=camZ+Math.cos(camYaw)*cp*camDist;
   if(env&&!env.round){ cx=clamp(cx,-H-.6,H+.6); cz=clamp(cz,-H-.6,H+.6); }
-  camera.position.set(cx,Math.max(.9,(ty||1.8)+Math.sin(camPitch)*camDist),cz);
+  let cy=Math.max(.9,(ty||1.8)+Math.sin(camPitch)*camDist);
+  /* never sit inside a stall / desk / pillar: slide the camera in toward the player until it is clear */
+  if(env&&env.obs&&cy<7){
+    for(let k=1;k>=.2;k-=.16){
+      const px=camX+(cx-camX)*k, pz=camZ+(cz-camZ)*k;
+      if(!env.obs.some(o=>Math.hypot(px-o.x,pz-o.z)<o.r+.9)){ cx=px; cz=pz; cy=Math.max(.9,(ty||1.8)+(cy-(ty||1.8))*k); break; }
+      if(k<.3){ cx=px; cz=pz; cy=Math.max(cy,5); }
+    }
+  }
+  camera.position.set(cx,cy,cz);
   camera.lookAt(camX,ty||1.6,camZ);
 }
 
@@ -454,7 +525,7 @@ function frame(t){
     if(!prebuilt&&timer<CFG.lobbySeconds-3){ prebuilt=true; getMap(nextDef); }
     daviT-=dt; if(daviT<=0){ daviT=rnd(6,11); daviLobbyPopup(); }
     if(HER){ herSparkT-=dt; if(herSparkT<=0){ herSparkT=rnd(.9,1.7); emit(rnd(-1.2,1.2),rnd(2.2,4),rnd(-1.2,1.2),5,0xffe9b0,.8,1.4,-.5,1.2); } }
-    if(timer<=0) startRound();
+    if(timer<=0&&!isGuest()) startRound();
   } else if(state==="play"){
     if(grace>0){
       const before=Math.ceil(grace); grace-=dt;
@@ -464,14 +535,14 @@ function frame(t){
       timer-=dt; roundT+=dt;
       freezeT=Math.max(0,freezeT-dt); gravT=Math.max(0,gravT-dt); hyperT=Math.max(0,hyperT-dt);
       runners.forEach(r=>{ if(r.juiceT>0) r.juiceT-=dt; if(r.invuln>0) r.invuln-=dt; }); if(ADM.god&&player&&player.alive) player.invuln=2;
-      if(CFG.daviccinoEvents){ evT-=dt; if(evT<=0){ evT=rnd(9,14); daviEvent(); } }
+      if(CFG.daviccinoEvents&&!isGuest()){ evT-=dt; if(evT<=0){ evT=rnd(9,14); daviEvent(); } }
       nextRandSound-=dt;
       if(nextRandSound<=0){ nextRandSound=rnd(CFG.sounds.randomEveryMin,CFG.sounds.randomEveryMax); playFrom(SND.random); }
     }
-    updateChasers(dt);
-    if(timer<=0||!runners.some(r=>r.alive)) endRound();
+    if(isGuest()) ghostChasers(dt); else updateChasers(dt);
+    if(!isGuest()&&(timer<=0||!runners.some(r=>r.alive))) endRound();
   } else if(state==="results"){
-    timer-=dt; if(timer<=0) enterLobby();
+    timer-=dt; if(timer<=0&&!isGuest()) enterLobby();
   }
 
   /* player input -> world direction relative to camera */
@@ -488,12 +559,15 @@ function frame(t){
   for(const r of runners){
     if(!r.alive) continue;
     if(r.isPlayer){ stepRunner(r,dt,pwx,pwz,state==="results"?false:wantJump); continue; }
+    if(r.ghost){ ghostStep(r,dt); continue; }
     const j=r.wantJump; r.wantJump=false;
     if(state==="play"){ if(grace>0){ r.wx=r.wz=0; } else botThink(r,dt); }
     else if(state==="results"){ r.wx=r.wz=0; }
     else lobbyAI(r,dt);
     stepRunner(r,dt,r.wx,r.wz,j);
   }
+
+  netTick(dt);
 
   /* camera */
   if(state==="title"){
@@ -503,7 +577,7 @@ function frame(t){
     if(player&&!player.alive&&state==="play") tgt=runners.find(r=>r.alive)||player;
     if(tgt) updateCamera(dt,tgt.x,tgt.z,1.6);
   }
-  BB.skyFollow();
+  BB.skyFollow(); if(BB.sunFollow) BB.sunFollow(camX,camZ);
 
   /* lobby prompt */
   if(state==="lobby"&&player){
@@ -536,11 +610,11 @@ function frame(t){
 }
 
 /* ---------- boot ---------- */
-hub=W.buildHub(); scene.add(hub.group); env=hub; BB.setLook(hub.look);
+hub=seeded(777,()=>W.buildHub()); scene.add(hub.group); env=hub; BB.setLook(hub.look);
 const botNameBag=CFG.botNames.slice().sort(()=>Math.random()-.5);
 for(let i=0;i<CFG.botCount;i++){
   const names=botNameBag;
-  runners.push(mkRunner(names[i%names.length]+(i>=names.length?i:""),false,i+1));
+  const bt=mkRunner(names[i%names.length]+(i>=names.length?i:""),false,i+1); bt.bot=true; runners.push(bt);
 }
 placeRunners("hub"); setTitleOffset(true); BB.resize();
 try{ $("nameIn").value=localStorage.getItem("bb3d-name")||""; }catch(e){}
@@ -623,6 +697,7 @@ function runAdmin(line){
   const parts=line.replace(/^\//,"").split(/\s+/), cmd=(parts.shift()||"").toLowerCase(), a=parts, rest=parts.join(" ");
   const ok=m=>admLog("<b>ok</b> "+m), no=m=>admLog("<u>"+m+"</u>");
   const inPlay=state==="play", inLobby=state==="lobby";
+  if(isGuest()&&["help","hash","lock","quality"].indexOf(cmd)<0){ no("only the room host can use that"); return; }
   switch(cmd){
     case "help": case "?": ADMIN_HELP.forEach(h=>admLog(h)); break;
     case "status": ok("state="+state+" timer="+Math.ceil(timer)+" alive="+runners.filter(r=>r.alive).length+"/"+runners.length+" squares="+chasers.length+" god="+ADM.god+" map="+(nextDef?nextDef.name:"?")); break;
@@ -649,7 +724,7 @@ function runAdmin(line){
     case "ann": if(rest){ showBanner(esc(rest),3200); ok("announced"); } else no("/ann your text"); break;
     case "fx": for(let i=0;i<6;i++) setTimeout(()=>emit(rnd(-8,8),rnd(8,16),rnd(-8,8),70,null,10,1.6,5,0),i*220); ok("fireworks"); break;
     case "her": { const on=(a[0]||"on")!=="off"; HER=on; if(on){ herFirst=true; if(inLobby) herLobbyIntro(); } ok("surprise mode "+(on?"ON":"off")); break; }
-    case "map": { const m=W.MAPS.find(x=>x.key===(a[0]||"").toLowerCase()); if(m){ nextDef=m; prebuilt=false; updateLB(); ok("next map: "+m.name); } else no("bazaar | disco | classroom | taj"); break; }
+    case "map": { const m=W.MAPS.find(x=>x.key===(a[0]||"").toLowerCase()); if(m){ nextDef=m; prebuilt=false; bc({t:"map",key:m.key}); updateLB(); ok("next map: "+m.name); } else no("bazaar | disco | classroom | taj"); break; }
     case "quality": if(a[0]==="low"){ Q.pr=.75; BB.setShadows(false); BB.resize(); ok("low quality"); } else if(a[0]==="high"){ Q.pr=Math.min(devicePixelRatio||1,TOUCH?1.5:2); BB.setShadows(!TOUCH); BB.resize(); ok("high quality"); } else no("/quality low|high"); break;
     case "hash": if(rest){ ok("adminHash: "+cyrb53(rest,7)+"   <i>(paste into config.js)</i>"); } else no("/hash yournewpasscode"); break;
     case "lock": ADM.authed=false; try{ sessionStorage.removeItem("bb3d-adm"); }catch(e){} admEls.in.type="password"; ok("locked"); break;
@@ -657,18 +732,183 @@ function runAdmin(line){
   }
 }
 
-hintEl.textContent=TOUCH?"Left stick: move · Drag: camera · Pinch: zoom · Tap the button near stalls":"WASD move · Space jump · Drag: camera · Scroll: zoom · Q/R rotate · E interact";
-discoverAll().then(buildChaserMats).then(applyDaviFace).then(()=>{ $("play").disabled=false; $("play").textContent="PLAY"; });
-$("play").onclick=()=>{
-  if($("play").disabled) return;
+/* ---------- multiplayer (room code, host-authoritative) ----------
+   Host runs the whole game (squares, bots, timers, kills) and sends 15 snapshots/second.
+   Guests move their own character locally, send their position, and show what the host says. */
+const net=BB.net;
+let MP=null;   // {role:"host"|"guest", myId, humans:Map(peer->runner), pending:[], n, snapT, posT}
+function isHost(){ return !!MP&&MP.role==="host"; }
+function isGuest(){ return !!MP&&MP.role==="guest"; }
+function bc(m){ if(isHost()) net.broadcast(m); }
+const byId=id=>runners.find(r=>r.id===id);
+const mpMsg=t=>{ $("mpMsg").textContent=t||""; };
+const fin=v=>(typeof v==="number"&&isFinite(v))?v:0;
+function mpButtons(on){ $("mkRoom").disabled=!on; $("joinRoom").disabled=!on; }
+function phaseMsg(){
+  const m={t:"phase",s:state,timer:+timer.toFixed(2),results:results,fin:gameFinished,map:(state==="lobby"||!curMap)?nextDef.key:curMap.key};
+  if(state==="play"){ m.sp={}; runners.forEach(r=>{ m.sp[r.id]=[+r.x.toFixed(2),+r.z.toFixed(2),+r.yaw.toFixed(2)]; }); }
+  if(state==="results") m.banner=lastBanner;
+  return m;
+}
+function rosterMsg(){ return {t:"roster",list:runners.map(r=>({id:r.id,name:r.name,look:r.look,bot:!!r.bot}))}; }
+function updateRoomChip(){
+  const c=$("roomChip"); if(!MP||!net.code){ c.style.display="none"; return; }
+  const n=runners.filter(r=>!r.bot).length; c.style.display=""; c.textContent="ROOM "+net.code+" · "+n+" 👥";
+}
+$("roomChip").onclick=()=>{
+  if(!net.code) return; const link=location.origin+location.pathname+"?room="+net.code;
+  try{ navigator.clipboard.writeText(link).then(()=>feed("Invite link copied 📋"),()=>feed("Room code: "+net.code)); }catch(e){ feed("Room code: "+net.code); }
+};
+/* host side */
+function addHuman(peer,name){
+  const n=++MP.n, id="p"+n, r=mkRunner(name,false,n+20,id); r.remote=true; r.ghost=true; r.peer=peer;
+  r.x=rnd(-10,10); r.z=rnd(11,18); r.nx=r.x; r.nz=r.z; r.ny=0; r.nyaw=PI; r.nmv=0; r.av.group.position.set(r.x,0,r.z);
+  runners.push(r); MP.humans.set(peer,r);
+  net.sendTo(peer,{t:"welcome",id:id,roster:rosterMsg().list,phase:phaseMsg()});
+  bc(rosterMsg()); feed(name+" joined the room 🌐"); updateRoomChip(); updateLB();
+}
+function flushPending(){ const q=MP.pending; MP.pending=[]; q.forEach(e=>{ if(net.conns.has(e.peer)&&!MP.humans.has(e.peer)) addHuman(e.peer,e.name); }); }
+function hostMsg(peer,m){
+  if(!m||typeof m!=="object") return;
+  if(m.t==="join"){
+    if(MP.humans.size>=7){ net.sendTo(peer,{t:"deny",why:"That room is full (8 players)."}); return; }
+    const name=String(m.name||"Player").slice(0,14)||"Player";
+    if(state==="lobby") addHuman(peer,name); else { MP.pending.push({peer:peer,name:name}); net.sendTo(peer,{t:"wait"}); }
+    return;
+  }
+  const r=MP.humans.get(peer); if(!r) return;
+  if(m.t==="p"){ r.nx=clamp(fin(m.x),-60,60); r.nz=clamp(fin(m.z),-60,60); r.ny=clamp(fin(m.y),0,12); r.nyaw=fin(m.yaw); r.nmv=m.mv?1:0; }
+  else if(m.t==="b"&&m.b){ r.buff={juice:!!m.b.juice,shield:!!m.b.shield,bless:!!m.b.bless}; }
+}
+function hostLeave(peer){
+  MP.pending=MP.pending.filter(q=>q.peer!==peer);
+  const r=MP.humans.get(peer); if(!r) return;
+  MP.humans.delete(peer); scene.remove(r.av.group); const i=runners.indexOf(r); if(i>=0) runners.splice(i,1);
+  bc(rosterMsg()); feed(r.name+" left the room"); updateRoomChip(); updateLB();
+}
+/* guest side */
+function applyRoster(list){
+  const keep={}; list.forEach(e=>{ keep[e.id]=1; });
+  runners=runners.filter(r=>{ if(keep[r.id]) return true; scene.remove(r.av.group); return false; });
+  list.forEach((e,i)=>{
+    if(byId(e.id)) return;
+    const me=e.id===MP.myId, r=mkRunner(e.name,me,i,e.id,e.look); r.ghost=!me; r.bot=!!e.bot; r.fresh=true;
+    if(me){ player=r; r.x=rnd(-10,10); r.z=rnd(11,18); r.av.group.position.set(r.x,0,r.z); }
+    runners.push(r);
+  });
+  updateRoomChip(); if(player&&nextDef) updateLB();
+}
+function applyPhase(m){
+  results=m.results||[]; gameFinished=!!m.fin;
+  const def=W.MAPS.find(x=>x.key===m.map)||nextDef||W.MAPS[0];
+  if(m.s==="lobby"){ enterLobby(def); timer=m.timer; }
+  else if(m.s==="play"){ nextDef=def; startRound(m.sp); timer=m.timer; }
+  else { curMap=getMap(def); showEnv("arena"); state="results"; timer=m.timer; statsEl.style.display="none"; freezeT=gravT=hyperT=0; if(m.banner) showBanner(m.banner,4600); syncLB(); }
+}
+function applySnap(m){
+  if(!player) return;
+  if(m.st===state){ timer=m.tm; roundT=m.rt; grace=m.gr; }
+  freezeT=m.fz; gravT=m.gv; hyperT=m.hy;
+  m.r.forEach(e=>{
+    const r=byId(e[0]); if(!r) return;
+    r.shield=e[7]?1:0;
+    if(r===player) return;
+    r.nx=e[1]; r.ny=e[2]; r.nz=e[3]; r.nyaw=e[4]; r.nmv=e[5];
+    if(r.fresh){ r.x=e[1]; r.y=e[2]; r.z=e[3]; r.yaw=e[4]; r.fresh=false; }
+  });
+  while(chasers.length>m.c.length){ const c=chasers.pop(); scene.remove(c.g); scene.remove(c.sh); }
+  m.c.forEach((e,i)=>{ let c=chasers[i]; if(!c) c=createChaser(e[2],e[0],e[1]); c.tx=e[0]; c.tz=e[1]; });
+}
+function guestMsg(m){
+  if(!m||typeof m!=="object") return;
+  switch(m.t){
+    case "welcome": MP.myId=m.id; runners.forEach(r=>scene.remove(r.av.group)); runners=[]; player=null; applyRoster(m.roster); guestEnter(m.phase); break;
+    case "wait": mpMsg("Connected ✅  A round is running. You'll drop in at the next lobby…"); break;
+    case "deny": mpMsg(m.why||"Couldn't join."); leaveNet(); mpButtons(true); break;
+    case "roster": if(player) applyRoster(m.list); break;
+    case "phase": if(player) applyPhase(m); break;
+    case "s": applySnap(m); break;
+    case "k": { const r=byId(m.id); if(r&&r.alive) kill(r,m.ci>=0?{idx:m.ci}:null,m,true); break; }
+    case "sh": { const r=byId(m.id); if(r) shieldBreak(r); break; }
+    case "dv": daviSay(m.text,m.sub); break;
+    case "map": { const d=W.MAPS.find(x=>x.key===m.key); if(d){ nextDef=d; prebuilt=false; updateLB(); } break; }
+  }
+}
+function leaveNet(){ try{ if(net.peer) net.peer.destroy(); }catch(e){} net.role="solo"; net.code=null; net.conn=null; net.peer=null; net.conns.clear(); MP=null; }
+function hostGone(){
+  if(player){ showBanner("Host left the room 😢<br><span style='font-size:.4em'>Going back to the title…</span>",0); setTimeout(()=>{ location.href=location.pathname; },2600); }
+  else { mpMsg("Lost connection to the room."); leaveNet(); mpButtons(true); }
+}
+function netTick(dt){
+  if(!MP) return;
+  if(isHost()){
+    MP.snapT-=dt; if(MP.snapT>0||!net.conns.size) return; MP.snapT=1/15;
+    const f=v=>+v.toFixed(2);
+    net.broadcast({t:"s",st:state,tm:f(timer),rt:f(roundT),gr:f(Math.max(0,grace)),fz:+freezeT.toFixed(1),gv:+gravT.toFixed(1),hy:+hyperT.toFixed(1),
+      r:runners.map(r=>[r.id,f(r.x),f(r.y),f(r.z),f(r.yaw),r.moving?1:0,r.alive?1:0,r.shield>0?1:0]),
+      c:chasers.map(c=>[f(c.x),f(c.z),c.idx])});
+  } else if(player){
+    MP.posT-=dt; if(MP.posT>0) return; MP.posT=.05;
+    net.toHost({t:"p",x:+player.x.toFixed(2),y:+player.y.toFixed(2),z:+player.z.toFixed(2),yaw:+player.yaw.toFixed(2),mv:player.moving?1:0});
+  }
+}
+
+/* ---------- title buttons ---------- */
+function titleName(){
   const nm=($("nameIn").value||"").trim().slice(0,14)||"You";
   try{ localStorage.setItem("bb3d-name",nm); }catch(e){}
   try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); if(actx.resume) actx.resume(); }catch(e){}
   synth(440,.08,"square",.04);
+  return nm;
+}
+function enterGame(nm,id){
   $("title").style.display="none"; $("hud").style.display="block"; setTitleOffset(false);
-  HER=isHer(nm); player=mkRunner(nm,true,0); runners.push(player); results=[];
-  enterLobby(); hintEl.style.opacity="1"; hintT=0; cv.focus();
+  HER=isHer(nm); player=mkRunner(nm,true,0,id); runners.push(player); results=[];
+  enterLobby(); hintEl.style.opacity="1"; hintT=0; cv.focus(); updateRoomChip();
   daviSay("Welcome to my lobby, "+nm+". Explore. Eat. Behave. 😎","@"+CFG.insta);
+}
+function guestEnter(ph){
+  $("title").style.display="none"; $("hud").style.display="block"; setTitleOffset(false);
+  HER=isHer(player.name); applyPhase(ph); hintEl.style.opacity="1"; hintT=0; cv.focus(); updateRoomChip();
+  daviSay("Welcome to the room, "+player.name+". Don't touch the squares. 😎","@"+CFG.insta);
+}
+$("mkRoom").onclick=()=>{
+  if($("mkRoom").disabled) return;
+  const nm=titleName(); mpButtons(false); mpMsg("Opening your room…");
+  MP={role:"host",myId:"host",humans:new Map(),pending:[],n:0,snapT:0,posT:0};
+  net.host({
+    onReady(code){
+      mpMsg("");
+      const keep=CFG.mpBots!==undefined?CFG.mpBots:4;
+      runners.filter(r=>r.bot).slice(keep).forEach(r=>{ scene.remove(r.av.group); runners.splice(runners.indexOf(r),1); });
+      enterGame(nm,"host");
+      daviSay("Room code: "+code,"tap the ROOM chip to copy the invite link");
+    },
+    onError(msg){ leaveNet(); mpMsg(msg); mpButtons(true); },
+    onJoin(){}, onLeave:hostLeave, onMsg:hostMsg
+  });
+};
+$("joinRoom").onclick=()=>{
+  if($("joinRoom").disabled) return;
+  const code=net.clean($("codeIn").value);
+  if(code.length!==5){ mpMsg("Type the 5-character room code first."); return; }
+  const nm=titleName(); mpButtons(false); mpMsg("Connecting to room "+code+"…");
+  MP={role:"guest",myId:null,humans:new Map(),pending:[],n:0,snapT:0,posT:0};
+  net.join(code,{
+    onOpen(){ mpMsg("Connected ✅  joining the lobby…"); net.toHost({t:"join",name:nm}); },
+    onError(msg){ leaveNet(); mpMsg(msg); mpButtons(true); },
+    onMsg:guestMsg, onClose:hostGone
+  });
+};
+$("codeIn").addEventListener("input",()=>{ $("codeIn").value=net.clean($("codeIn").value); });
+try{ const q=new URLSearchParams(location.search).get("room"); if(q){ $("codeIn").value=net.clean(q); mpMsg("Room code filled in. Type your name and hit JOIN."); } }catch(e){}
+
+
+hintEl.textContent=TOUCH?"Left stick: move · Drag: camera · Pinch: zoom · Tap the button near stalls":"WASD move · Space jump · Drag: camera · Scroll: zoom · Q/R rotate · E interact";
+discoverAll().then(buildChaserMats).then(applyDaviFace).then(()=>{ $("play").disabled=false; $("play").textContent="PLAY"; mpButtons(!!net); });
+$("play").onclick=()=>{
+  if($("play").disabled) return;
+  const nm=titleName(); MP=null; enterGame(nm);
 };
 requestAnimationFrame(frame);
 })();

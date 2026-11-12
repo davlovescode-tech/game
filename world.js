@@ -246,7 +246,7 @@ W.buildHub=function(){
 /* ============================================================
    ARENA MAPS
    ============================================================ */
-const H=26;
+const H=40;
 function walls(g,mat,h,thick){
   const o=H+thick/2+1, L=2*H+2*thick+2;
   mk(g,BX(L,h,thick),mat,0,h/2,-o); mk(g,BX(L,h,thick),mat,0,h/2,o);
@@ -265,19 +265,19 @@ function buildBazaar(){
     mk(g,CY(2.3,2.5,20,14),M(0xe8c98a,{r:.8}),x,10,z); mk(g,SP(2.6,14,10),M(0xffd23f,{r:.3,m:.6}),x,21,z); mk(g,CY(.1,.1,3,6),M(0xffd23f,{m:1,r:.3}),x,23.8,z);
   });
   const placed=[]; const cols=[0xff5a36,0x2ea8ff,0x3ddc84,0xffd23f,0xff3df0,0x8338ec];
-  scatter(9,8,5,H,(x,z)=>Math.hypot(x,z)<6,placed).forEach(p=>{
+  scatter(16,9,5,H,(x,z)=>Math.hypot(x,z)<7,placed).forEach(p=>{
     const rot=Math.floor(rnd(0,4))*PI/2; const c1=pick(cols), c2=pick(cols);
     buildStall(g,{x:p.x,z:p.z,rot:rot,kind:"plain",cA:c1,cB:c2});
     obs.push({x:p.x,z:p.z,r:2.5});
   });
-  const crates=scatter(8,5,4,H,(x,z)=>Math.hypot(x,z)<5,placed);
+  const crates=scatter(16,5,4,H,(x,z)=>Math.hypot(x,z)<5,placed);
   crates.forEach((p,i)=>{
     if(i%3===2){ mk(g,CY(.7,.7,1.4,12),M(0x6a3b1e,{r:.7}),p.x,.7,p.z); mk(g,CY(.72,.72,.1,12),M(0x222222,{m:.6,r:.4}),p.x,.9,p.z,{cast:false}); mk(g,CY(.72,.72,.1,12),M(0x222222,{m:.6,r:.4}),p.x,.4,p.z,{cast:false}); }
     else { mk(g,BX(1.5,1.5,1.5),M(0xb07a3a,{r:.8}),p.x,.75,p.z); if(i%2) mk(g,BX(1.1,1.1,1.1),M(0xc48a44,{r:.8}),p.x+.1,2.05,p.z); }
     obs.push({x:p.x,z:p.z,r:1.1});
   });
-  const bl=[]; [-14,0,14].forEach(z=>string(bl,[-H-3,9,z],[H+3,9,z],1.6,26)); [-14,14].forEach(x=>string(bl,[x,9,-H-3],[x,9,H+3],1.6,26)); bulbs(g,bl);
-  const lan=[]; for(let i=0;i<22;i++) lan.push({x:rnd(-H,H),y:rnd(5.5,8),z:rnd(-H,H),s:rnd(.3,.5),color:pick([0xff8a1f,0xff3d7a,0xffd23f])});
+  const bl=[]; [-28,-14,0,14,28].forEach(z=>string(bl,[-H-3,9,z],[H+3,9,z],1.8,40)); [-28,-14,14,28].forEach(x=>string(bl,[x,9,-H-3],[x,9,H+3],1.8,40)); bulbs(g,bl);
+  const lan=[]; for(let i=0;i<50;i++) lan.push({x:rnd(-H,H),y:rnd(5.5,8),z:rnd(-H,H),s:rnd(.3,.5),color:pick([0xff8a1f,0xff3d7a,0xffd23f])});
   instanced(g,SP(1,8,6),new T.MeshBasicMaterial({color:0xffffff,fog:false}),lan,false);
   return {group:g,obs:obs,name:"Gali Bazaar",key:"bazaar",look:{top:0x5a3b9c,bot:0xffb27a,hs:0xffd9b0,hg:0x6a4a3a,hi:.75,sc:0xffc58a,si:1.3,sp:[-26,22,18],fn:48,ff:135,stars:false}};
 }
@@ -286,7 +286,7 @@ function buildBazaar(){
 function buildDisco(){
   const g=new T.Group(), obs=[];
   plane(g,300,300,M(0x07020f,{r:1}),0,-.04,0);
-  const N=13; const hues=[]; for(let i=0;i<N*N;i++) hues.push(Math.random());
+  const N=19; const hues=[]; for(let i=0;i<N*N;i++) hues.push(Math.random());
   const draw=(c,w,h)=>{ const s=w/N; for(let i=0;i<N;i++)for(let j=0;j<N;j++){ c.fillStyle="hsl("+Math.floor(hues[i*N+j]*360)+",90%,52%)"; c.fillRect(i*s+1.5,j*s+1.5,s-3,s-3); } c.fillStyle="#0a0418"; };
   const ft=ctex(512,512,(c,w,h)=>{ c.fillStyle="#0a0418"; c.fillRect(0,0,w,h); draw(c,w,h); });
   const floor=plane(g,2*H,2*H,M(0xffffff,{map:ft,emap:ft,e:.95,ec:0xffffff,r:.3,m:.1}),0,0,0);
@@ -294,7 +294,7 @@ function buildDisco(){
   const ledM=new T.MeshBasicMaterial({color:0xff3df0,fog:false}), led2=new T.MeshBasicMaterial({color:0x27e6ff,fog:false});
   const o=H+1.2; [[0,-o,2*H+4,.3],[0,o,2*H+4,.3],[-o,0,.3,2*H+4],[o,0,.3,2*H+4]].forEach(p=>{ mk(g,BX(p[2],.35,p[3]),ledM,p[0],.5,p[1],{glow:true}); mk(g,BX(p[2],.35,p[3]),led2,p[0],12,p[1],{glow:true}); });
   const ringMats=[];
-  const placed=[]; scatter(8,9,4.5,H,(x,z)=>Math.hypot(x,z)<6||z<-H+9,placed).forEach((p,i)=>{
+  const placed=[]; scatter(14,10,4.5,H,(x,z)=>Math.hypot(x,z)<7||z<-H+10,placed).forEach((p,i)=>{
     mk(g,CY(.9,1,12,14),M(0x1a1030,{r:.3,m:.7}),p.x,6,p.z);
     for(let k=0;k<3;k++){ const m=new T.MeshBasicMaterial({color:0xffffff,fog:false}); ringMats.push({m:m,off:i*.11+k*.18}); mk(g,new T.TorusGeometry(1.15,.09,8,24),m,p.x,2+k*3.4,p.z,{rx:PI/2,glow:true}); }
     obs.push({x:p.x,z:p.z,r:1.6});
@@ -318,7 +318,7 @@ function buildDisco(){
   mk(g,BX(17.2,7,.4),M(0x0a0418,{r:.5}),0,7.6,-H-2);
   [-10.5,10.5].forEach(x=>{ mk(g,BX(3.2,6.4,3),M(0x0e0620,{r:.5,m:.4}),x,3.2,sz); [1.7,4.4].forEach(y=>mk(g,CY(.9,.9,.2,18),M(0x050210,{r:.4,m:.5,e:.4,ec:0xff3df0}),x,y,sz+1.55,{rx:PI/2,cast:false})); obs.push({x:x,z:sz,r:2.3}); });
   [-6,0,6].forEach(x=>obs.push({x:x,z:sz,r:3.3}));
-  const l1=new T.PointLight(0xff3df0,1.5,38), l2=new T.PointLight(0x27e6ff,1.5,38); l1.position.set(-12,6,8); l2.position.set(12,6,-6); g.add(l1,l2);
+  const l1=new T.PointLight(0xff3df0,1.5,64), l2=new T.PointLight(0x27e6ff,1.5,64); l1.position.set(-12,6,8); l2.position.set(12,6,-6); g.add(l1,l2);
   let acc=0;
   return {group:g,obs:obs,name:"Disco Dandiya",key:"disco",look:{top:0x070216,bot:0x35105e,hs:0xa06bff,hg:0x1a0a30,hi:.55,sc:0xb08cff,si:.35,sp:[10,40,10],fn:34,ff:110,stars:true},
     tick(t,dt){
@@ -344,21 +344,27 @@ function buildClass(){
   const cb=new T.Mesh(new T.PlaneGeometry(18,5.6),new T.MeshBasicMaterial({map:chalk})); cb.position.set(0,6.4,iz+.2); g.add(cb);
   const clock=ctex(128,128,(c)=>{ c.fillStyle="#fff"; c.beginPath(); c.arc(64,64,60,0,PI*2); c.fill(); c.lineWidth=6; c.strokeStyle="#222"; c.stroke(); c.lineWidth=5; c.beginPath(); c.moveTo(64,64); c.lineTo(64,24); c.moveTo(64,64); c.lineTo(90,78); c.stroke(); });
   const ck=new T.Mesh(new T.CircleGeometry(1.2,20),new T.MeshBasicMaterial({map:clock})); ck.position.set(0,11,iz+.2); g.add(ck);
-  [-1,1].forEach(sd=>{ for(let k=0;k<4;k++){ const z=-15+k*10, x=sd*(H+.95);
+  [-1,1].forEach(sd=>{ for(let k=0;k<6;k++){ const z=-25+k*10, x=sd*(H+.95);
     mk(g,BX(.3,5.6,5.6),M(0x4a3a2a,{r:.6}),x+sd*.05,7,z);
     const wn=new T.Mesh(new T.PlaneGeometry(5,5),new T.MeshBasicMaterial({color:0xcfeaff,fog:false})); wn.position.set(x-sd*.2,7,z); wn.rotation.y=sd>0?-PI/2:PI/2; g.add(wn); } });
   const dc=[0x7a3a1a,0x8a4a22,0x6a3a2a];
-  for(let i=0;i<5;i++)for(let j=0;j<4;j++){
-    const x=-16+i*8, z=-10+j*7.5, d=new T.Group(); d.position.set(x,0,z); g.add(d);
-    mk(d,BX(2.9,.18,1.8),M(0xe0b36a,{r:.5}),0,1.5,0); mk(d,BX(2.5,1.4,1.3),M(pick(dc),{r:.7}),0,.7,-.05);
-    mk(d,BX(1.4,.15,1.2),M(0xd8a04a,{r:.6}),0,.95,1.9); mk(d,BX(1.4,.9,.12),M(0xd8a04a,{r:.6}),0,1.55,2.5); mk(d,BX(.12,.9,.12),M(0x333333,{m:.6}),-.5,.45,1.9,{cast:false}); mk(d,BX(.12,.9,.12),M(0x333333,{m:.6}),.5,.45,1.9,{cast:false});
-    if((i+j)%3===0) mk(d,BX(.9,.12,.6),M(pick([0xff5a36,0x2ea8ff,0x3ddc84]),{r:.5}),-.7,1.65,0,{cast:false});
+  const dTop=[],dBody=[],dSeat=[],dBack=[],dLeg=[],dBook=[];
+  for(let i=0;i<7;i++)for(let j=0;j<5;j++){
+    const x=-27+i*9, z=-18+j*9;
+    dTop.push({x:x,y:1.5,z:z,sx:2.9,sy:.18,sz:1.8,color:0xe0b36a});
+    dBody.push({x:x,y:.7,z:z-.05,sx:2.5,sy:1.4,sz:1.3,color:pick(dc)});
+    dSeat.push({x:x,y:.95,z:z+1.9,sx:1.4,sy:.15,sz:1.2,color:0xd8a04a});
+    dBack.push({x:x,y:1.55,z:z+2.5,sx:1.4,sy:.9,sz:.12,color:0xd8a04a});
+    dLeg.push({x:x-.5,y:.45,z:z+1.9,sx:.12,sy:.9,sz:.12,color:0x333333},{x:x+.5,y:.45,z:z+1.9,sx:.12,sy:.9,sz:.12,color:0x333333});
+    if((i+j)%3===0) dBook.push({x:x-.7,y:1.65,z:z,sx:.9,sy:.12,sz:.6,color:pick([0xff5a36,0x2ea8ff,0x3ddc84])});
     obs.push({x:x,z:z+.8,r:1.6});
   }
+  const dm=new T.MeshLambertMaterial({color:0xffffff});
+  [dTop,dBody,dSeat,dBack,dLeg,dBook].forEach(list=>{ if(list.length) instanced(g,BX(1,1,1),dm,list,true); });
   mk(g,BX(6.5,1.5,2.4),M(0x6a3a1a,{r:.6}),0,.75,-H+4); mk(g,SP(.7,14,10),M(0x3a86ff,{r:.4,m:.3}),1.5,1.9,-H+4,{cast:true}); obs.push({x:-2,z:-H+4,r:1.9},{x:1.8,z:-H+4,r:1.9});
   mk(g,BX(2,10,6),M(0x5a3a22,{r:.7}),-H+1,5,-14); const books=[]; for(let k=0;k<30;k++) books.push({x:-H+2.3,y:1.4+Math.floor(k/6)*1.8,z:-16.2+(k%6)*.55,sx:.5,sy:1.2,sz:.4,color:pick([0xff5a36,0x2ea8ff,0xffd23f,0x3ddc84,0xff3df0])});
   instanced(g,BX(1,1,1),new T.MeshLambertMaterial({color:0xffffff}),books,false); obs.push({x:-H+1,z:-14,r:2});
-  const planes=[]; for(let i=0;i<10;i++){ const m=mk(g,new T.ConeGeometry(.2,.9,3),B(pick([0xffffff,0xffe066,0x9ff3ff])),0,0,0,{rx:PI/2,glow:true}); planes.push({m:m,a:Math.random()*6.28,r:rnd(6,22),y:rnd(3.5,7),sp:rnd(.15,.35)*(Math.random()<.5?-1:1)}); }
+  const planes=[]; for(let i=0;i<10;i++){ const m=mk(g,new T.ConeGeometry(.2,.9,3),B(pick([0xffffff,0xffe066,0x9ff3ff])),0,0,0,{rx:PI/2,glow:true}); planes.push({m:m,a:Math.random()*6.28,r:rnd(6,34),y:rnd(3.5,7),sp:rnd(.15,.35)*(Math.random()<.5?-1:1)}); }
   let dust=0;
   return {group:g,obs:obs,name:"Last Bench Classroom",key:"classroom",look:{top:0x6cb8ff,bot:0xe6f6ff,hs:0xffffff,hg:0xb89868,hi:.9,sc:0xfff0d0,si:1.15,sp:[-25,36,10],fn:55,ff:150,stars:false},
     tick(t,dt){ planes.forEach(p=>{ p.a+=p.sp*dt; p.m.position.set(Math.cos(p.a)*p.r,p.y+Math.sin(t+p.r)*.5,Math.sin(p.a)*p.r); p.m.rotation.y=-p.a+(p.sp>0?PI:0); });
@@ -374,9 +380,9 @@ function buildTaj(){
   const mm=M(0xffffff,{map:marble,r:.35});
   plane(g,3.6,2*H+4,mm,-5.2,.03,0); plane(g,3.6,2*H+4,mm,5.2,.03,0); plane(g,2*H+4,3.6,mm,0,.03,6);
   const water=M(0x3fa9ff,{r:.06,m:.55,e:.3,ec:0x1a6fd0});
-  plane(g,6.2,37,water,0,.06,-2.5);
-  mk(g,BX(6.8,.08,37.6),mm,0,.01,-2.5,{cast:false});
-  const tz=-H+3.5;
+  const tz=-H+3.5, poolA=tz+16, poolB=H-6, poolL=poolB-poolA, poolC=(poolA+poolB)/2;
+  plane(g,6.2,poolL,water,0,.06,poolC);
+  mk(g,BX(6.8,.08,poolL+.6),mm,0,.01,poolC,{cast:false});
   mk(g,BX(27,1.8,18),M(0xf6f1e6,{r:.4}),0,.9,tz); mk(g,BX(28,.4,19),M(0xe8e0cc,{r:.4}),0,.2,tz);
   const wm=M(0xfffaf0,{r:.3});
   mk(g,BX(11,9,11),wm,0,6.3,tz); mk(g,BX(11,9,11),wm,0,6.3,tz,{ry:PI/4,s:.9});
@@ -393,11 +399,12 @@ function buildTaj(){
   });
   [-9,-3,3,9].forEach(x=>obs.push({x:x,z:tz,r:4.4}));
   const placed=[];
-  [[-9.5,-9],[9.5,-9],[-9.5,10],[9.5,10]].forEach(([x,z])=>{ mk(g,BX(2.2,1.3,8),M(0x1f7a35,{r:.9}),x,.65,z); [-2.6,0,2.6].forEach(dz=>obs.push({x:x,z:z+dz,r:1.4})); placed.push({x:x,z:z}); });
-  const fl=[]; [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{ for(let k=0;k<45;k++) fl.push({x:sx*rnd(13,24),y:.3,z:(sz<0?rnd(-14,-1):rnd(8,22))*(sz<0?1:1),s:rnd(.16,.26),color:pick([0xff4d6d,0xffd23f,0xff8a1f,0xff3df0,0xffffff,0x9b5de5])}); });
+  const bedZ=[]; for(let z=tz+14;z<H-8;z+=12) bedZ.push(z);
+  bedZ.forEach(z=>[-9.5,9.5].forEach(x=>{ mk(g,BX(2.2,1.3,8),M(0x1f7a35,{r:.9}),x,.65,z); [-2.6,0,2.6].forEach(dz=>obs.push({x:x,z:z+dz,r:1.4})); placed.push({x:x,z:z}); }));
+  const fl=[]; [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{ for(let k=0;k<90;k++) fl.push({x:sx*rnd(13,H-3),y:.3,z:(sz<0?rnd(-H+14,-1):rnd(8,H-4)),s:rnd(.16,.26),color:pick([0xff4d6d,0xffd23f,0xff8a1f,0xff3df0,0xffffff,0x9b5de5])}); });
   instanced(g,SP(1,6,5),new T.MeshLambertMaterial({color:0xffffff}),fl,false);
-  scatter(9,6,4,H,(x,z)=>Math.abs(x)<9||z<-H+13,placed).forEach(p=>{ mk(g,CY(.25,.3,1,6),M(0x4a2f1a),p.x,.5,p.z); mk(g,CY(0,1.35,5.4,8),M(0x1a6b34,{r:.9}),p.x,3.4,p.z); obs.push({x:p.x,z:p.z,r:1.1}); });
-  const fz=6; mk(g,CY(1.7,1.9,.6,20),M(0xf4efe4,{r:.3}),0,.3,fz); mk(g,CY(.3,.4,2.2,10),M(0xf4efe4,{r:.3}),0,1.6,fz); mk(g,SP(.7,12,8),M(0xf4efe4,{r:.3}),0,2.8,fz); obs.push({x:0,z:fz,r:1.9});
+  scatter(20,7,4,H,(x,z)=>Math.abs(x)<9||z<-H+14,placed).forEach(p=>{ mk(g,CY(.25,.3,1,6),M(0x4a2f1a),p.x,.5,p.z); mk(g,CY(0,1.35,5.4,8),M(0x1a6b34,{r:.9}),p.x,3.4,p.z); obs.push({x:p.x,z:p.z,r:1.1}); });
+  const fz=poolC; mk(g,CY(1.7,1.9,.6,20),M(0xf4efe4,{r:.3}),0,.3,fz); mk(g,CY(.3,.4,2.2,10),M(0xf4efe4,{r:.3}),0,1.6,fz); mk(g,SP(.7,12,8),M(0xf4efe4,{r:.3}),0,2.8,fz); obs.push({x:0,z:fz,r:1.9});
   let sp=0;
   return {group:g,obs:obs,name:"Taj Garden",key:"taj",look:{top:0x4e6fd6,bot:0xffc9b0,hs:0xfff0e0,hg:0x6a8a5a,hi:.8,sc:0xffd9aa,si:1.2,sp:[34,22,-14],fn:55,ff:150,stars:false},
     tick(t,dt){ water.emissiveIntensity=.3+Math.sin(t*1.5)*.08; sp-=dt; if(sp<=0){ sp=.06; emit(0,2.9,fz,3,0xbfe6ff,1.4,1.2,7,4.5); } }};
