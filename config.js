@@ -28,7 +28,7 @@ window.GAME_CONFIG = {
   insta: "lowkeytuffdav",     // shown on the title page and in-game
 
   roundSeconds: 35,           // length of one round
-  lobbySeconds: 40,           // time everyone hangs out in the lobby before each round
+  lobbySeconds: 25,           // time everyone hangs out in the lobby before each round
   roundsPerGame: 3,           // leaderboard shows this many rounds, then resets
   squaresStart: 8,       // chasing squares at round start (10+ different faces exist)
   squaresMax: 14,        // most squares at once
