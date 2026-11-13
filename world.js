@@ -44,12 +44,21 @@ function skylineTex(body,wins){
     }
   });
 }
-function facadeTex(base,rep){
-  return ctex(256,256,(g,w,h)=>{
+function facadeMat(base,rep){
+  const wins=[]; for(let r=0;r<3;r++)for(let c=0;c<4;c++) wins.push(Math.random()<.55);
+  const map=ctex(256,256,(g,w,h)=>{
     g.fillStyle=base; g.fillRect(0,0,w,h); g.fillStyle="rgba(0,0,0,.1)"; for(let y=0;y<h;y+=32) g.fillRect(0,y,w,2);
-    for(let r=0;r<3;r++)for(let c=0;c<4;c++){ const x=18+c*62, y=22+r*76; g.fillStyle="#3a2418"; g.fillRect(x-4,y-4,44,58); g.fillStyle=Math.random()<.55?"#ffd98a":"#2b3550"; g.fillRect(x,y,36,50); g.fillStyle="#3a2418"; g.fillRect(x+16,y,3,50); }
+    for(let r=0;r<3;r++)for(let c=0;c<4;c++){ const x=18+c*62, y=22+r*76; g.fillStyle="#3a2418"; g.fillRect(x-4,y-4,44,58); g.fillStyle=wins[r*4+c]?"#ffd98a":"#1d2740"; g.fillRect(x,y,36,50); g.fillStyle="#3a2418"; g.fillRect(x+16,y,3,50); g.fillRect(x,y+24,36,3); }
   },rep,1);
+  const emap=ctex(256,256,(g,w,h)=>{
+    g.fillStyle="#000"; g.fillRect(0,0,w,h);
+    for(let r=0;r<3;r++)for(let c=0;c<4;c++){ if(!wins[r*4+c]) continue; const x=18+c*62, y=22+r*76; g.fillStyle="#ffcf7a"; g.fillRect(x,y,36,50); g.fillStyle="#000"; g.fillRect(x+16,y,3,50); g.fillRect(x,y+24,36,3); }
+  },rep,1);
+  const t=BB.pbr("plaster",{size:256,rep:rep,repY:1,ns:1,color:[255,255,255]});
+  return M(0xffffff,{map:map,emap:emap,e:1.25,ec:0xffffff,nmap:t.nmap,rmap:t.rmap,r:1,ns:.3});
 }
+const hex2=n=>[(n>>16)&255,(n>>8)&255,n&255];
+const PM=(kind,o)=>BB.pbrMat(kind,o);
 function scatter(n,minD,margin,H,avoid,placed){
   const pts=placed||[]; let tries=0, got=0;
   while(got<n&&tries<900){
@@ -76,7 +85,7 @@ function buildStall(parent,o){
   mk(g,BX(5.6,.12,1.7),M(0xe8d3b0,{r:.45}),0,1.21,.4);
   mk(g,BX(5.6,3.7,.2),M(o.cB,{r:.8}),0,1.85,-1.1);
   [-2.7,2.7].forEach(px=>mk(g,CY(.1,.1,3.7,8),M(0x3b2a1a),px,1.85,1.15));
-  mk(g,BX(5.9,.14,3.1),M(0xffffff,{map:stripeTex(o.cA,o.cB),r:.7}),0,3.75,.2,{rx:.2});
+  mk(g,BX(5.9,.14,3.1),PM("fabric",{size:128,rep:1,stripes:8,a:hex2(o.cA),b:hex2(o.cB),ns:2.2}),0,3.75,.2,{rx:.2});
   mk(g,BX(5.9,.35,.08),M(o.cA,{r:.7}),0,3.42,1.74,{rx:.2});
   for(let i=0;i<5;i++) mk(g,SP(.1,8,6),B(0xfff2b0),-2.4+i*1.2,3.2,1.62,{glow:true});
   if(o.sign){
@@ -134,13 +143,13 @@ function drawBoard(g,w,h,d){
 /* ============================================================
    LOBBY HUB: a Diwali night plaza
    ============================================================ */
-W.hubLook={top:0x120a2e,bot:0x5a2a6e,hs:0x9a88ea,hg:0x3a2a4a,hi:0.95,sc:0xaab8ff,si:0.7,sp:[-22,42,18],fn:46,ff:130,stars:true};
+W.hubLook={top:0x120a2e,bot:0x5a2a6e,hs:0x9a88ea,hg:0x3a2a4a,hi:0.95,sc:0xaab8ff,si:0.7,sp:[-22,42,18],fn:46,ff:130,stars:true,ex:1.1,bl:.7,sat:1.12};
 W.buildHub=function(){
   const g=new T.Group(), obs=[], R=21;
   const hub={group:g,obs:obs,round:true,R:R,spots:[],vendors:[],rollers:[],steam:[],look:W.hubLook};
   /* ground */
   plane(g,300,300,M(0x1d1030,{r:1}),0,-0.03,0);
-  const disc=new T.Mesh(new T.CircleGeometry(24,64),M(0xffffff,{map:cobbleTex("#5a4256",11),r:.92})); disc.rotation.x=-PI/2; disc.receiveShadow=true; g.add(disc);
+  const disc=new T.Mesh(new T.CircleGeometry(24,64),PM("cobble",{size:512,n:10,rep:10,ns:2.2,nscale:.9,pal:[[100,84,118],[116,96,132],[90,76,104],[126,104,140],[82,70,96]]})); disc.rotation.x=-PI/2; disc.receiveShadow=true; g.add(disc);
   const rang=new T.Mesh(new T.CircleGeometry(10,64),M(0xffffff,{map:rangoliTex,r:.7,e:.28,ec:0xffffff,emap:rangoliTex})); rang.rotation.x=-PI/2; rang.position.y=.03; rang.receiveShadow=true; g.add(rang);
   /* skyline backdrop */
   const sk=new T.Mesh(new T.CylinderGeometry(85,85,64,48,1,true),new T.MeshBasicMaterial({map:skylineTex("#150a2c",["#ffd98a","#ff9ff3","#9ff3ff","#ffb703"]),transparent:true,side:T.BackSide,fog:false,depthWrite:false}));
@@ -178,7 +187,7 @@ W.buildHub=function(){
     obs.push({x:x,z:z,r:1.4});
   });
   /* gate arch with sign */
-  [-5.8,5.8].forEach(x=>{ mk(g,CY(.6,.7,9,10),M(0x2a1450,{r:.4,m:.4,e:.15,ec:0x8338ec}),x,4.5,22.6); mk(g,SP(.75,10,8),B(0xffe066),x,9.2,22.6,{glow:true}); obs.push({x:x,z:22.6,r:.9}); });
+  [-5.8,5.8].forEach(x=>{ mk(g,CY(.28,.36,9,12),M(0x2a1450,{r:.4,m:.4,e:.15,ec:0x8338ec}),x,4.5,22.6); mk(g,SP(.75,10,8),B(0xffe066),x,9.2,22.6,{glow:true}); obs.push({x:x,z:22.6,r:.5}); });
   mk(g,BX(13.6,2.4,.9),M(0x120a22,{r:.5}),0,8.4,22.6);
   const gs=new T.Mesh(new T.PlaneGeometry(13,2.1),new T.MeshBasicMaterial({map:signTex("BHAAG BRAINROT","#1a0838","#ff3df0","LOBBY  ·  @"+CFG.insta,1024,168)})); gs.position.set(0,8.4,22.1); gs.rotation.y=PI; g.add(gs);
   /* scoreboard */
@@ -257,9 +266,9 @@ function walls(g,mat,h,thick){
 function buildBazaar(){
   const g=new T.Group(), obs=[];
   plane(g,300,300,M(0x2a1d18,{r:1}),0,-.04,0);
-  plane(g,2*H+6,2*H+6,M(0xffffff,{map:cobbleTex("#8a6a4a",14),r:.95}),0,0,0);
+  plane(g,2*H+6,2*H+6,PM("cobble",{size:512,n:10,rep:22,ns:2.2,nscale:.9,pal:[[168,128,92],[182,142,102],[150,114,84],[192,154,110],[136,104,78]]}),0,0,0);
   const facs=["#c9754b","#d9a15b","#b5524a","#e0b36a"], o=H+4, L=2*H+14;
-  [[0,-o,L,5],[0,o,L,5],[-o,0,5,L],[o,0,5,L]].forEach((p,i)=>{ mk(g,BX(p[2],15,p[3]),M(0xffffff,{map:facadeTex(facs[i],6),r:.9}),p[0],7.5,p[1]); });
+  [[0,-o,L,5],[0,o,L,5],[-o,0,5,L],[o,0,5,L]].forEach((p,i)=>{ mk(g,BX(p[2],15,p[3]),facadeMat(facs[i],6),p[0],7.5,p[1]); });
   [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{
     const x=sx*(H+4), z=sz*(H+4);
     mk(g,CY(2.3,2.5,20,14),M(0xe8c98a,{r:.8}),x,10,z); mk(g,SP(2.6,14,10),M(0xffd23f,{r:.3,m:.6}),x,21,z); mk(g,CY(.1,.1,3,6),M(0xffd23f,{m:1,r:.3}),x,23.8,z);
@@ -279,7 +288,7 @@ function buildBazaar(){
   const bl=[]; [-28,-14,0,14,28].forEach(z=>string(bl,[-H-3,9,z],[H+3,9,z],1.8,40)); [-28,-14,14,28].forEach(x=>string(bl,[x,9,-H-3],[x,9,H+3],1.8,40)); bulbs(g,bl);
   const lan=[]; for(let i=0;i<50;i++) lan.push({x:rnd(-H,H),y:rnd(5.5,8),z:rnd(-H,H),s:rnd(.3,.5),color:pick([0xff8a1f,0xff3d7a,0xffd23f])});
   instanced(g,SP(1,8,6),new T.MeshBasicMaterial({color:0xffffff,fog:false}),lan,false);
-  return {group:g,obs:obs,name:"Gali Bazaar",key:"bazaar",look:{top:0x5a3b9c,bot:0xffb27a,hs:0xffd9b0,hg:0x6a4a3a,hi:.75,sc:0xffc58a,si:1.3,sp:[-26,22,18],fn:48,ff:135,stars:false}};
+  return {group:g,obs:obs,name:"Gali Bazaar",key:"bazaar",look:{top:0x5a3b9c,bot:0xffb27a,hs:0xffd9b0,hg:0x6a4a3a,hi:.75,sc:0xffc58a,si:1.3,sp:[-26,22,18],fn:48,ff:135,stars:false,ex:.82,bl:.4,tint:[1.04,1,.94],sat:1.12}};
 }
 
 /* ---- 2. Disco Dandiya (neon night) ---- */
@@ -289,7 +298,7 @@ function buildDisco(){
   const N=19; const hues=[]; for(let i=0;i<N*N;i++) hues.push(Math.random());
   const draw=(c,w,h)=>{ const s=w/N; for(let i=0;i<N;i++)for(let j=0;j<N;j++){ c.fillStyle="hsl("+Math.floor(hues[i*N+j]*360)+",90%,52%)"; c.fillRect(i*s+1.5,j*s+1.5,s-3,s-3); } c.fillStyle="#0a0418"; };
   const ft=ctex(512,512,(c,w,h)=>{ c.fillStyle="#0a0418"; c.fillRect(0,0,w,h); draw(c,w,h); });
-  const floor=plane(g,2*H,2*H,M(0xffffff,{map:ft,emap:ft,e:.95,ec:0xffffff,r:.3,m:.1}),0,0,0);
+  const floor=plane(g,2*H,2*H,M(0xffffff,{map:ft,emap:ft,e:.5,ec:0xffffff,r:.22,m:.1,env:1.6}),0,0,0);
   const wm=M(0x120824,{r:.55,m:.3}); walls(g,wm,15,4);
   const ledM=new T.MeshBasicMaterial({color:0xff3df0,fog:false}), led2=new T.MeshBasicMaterial({color:0x27e6ff,fog:false});
   const o=H+1.2; [[0,-o,2*H+4,.3],[0,o,2*H+4,.3],[-o,0,.3,2*H+4],[o,0,.3,2*H+4]].forEach(p=>{ mk(g,BX(p[2],.35,p[3]),ledM,p[0],.5,p[1],{glow:true}); mk(g,BX(p[2],.35,p[3]),led2,p[0],12,p[1],{glow:true}); });
@@ -307,7 +316,7 @@ function buildDisco(){
   for(let i=0;i<6;i++){
     const outer=new T.Group(); outer.position.set(0,12.5,0); outer.rotation.y=i*PI/3; g.add(outer);
     const cg=new T.ConeGeometry(2.4,22,16,1,true); cg.translate(0,-11,0);
-    const bm=new T.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.11,blending:T.AdditiveBlending,depthWrite:false,side:T.DoubleSide,fog:false});
+    const bm=new T.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.055,blending:T.AdditiveBlending,depthWrite:false,side:T.DoubleSide,fog:false});
     const cone=new T.Mesh(cg,bm); cone.rotation.z=.55; outer.add(cone); beams.push({outer:outer,m:bm,off:i/6});
   }
   const sz=-H+1.8;
@@ -320,7 +329,7 @@ function buildDisco(){
   [-6,0,6].forEach(x=>obs.push({x:x,z:sz,r:3.3}));
   const l1=new T.PointLight(0xff3df0,1.5,64), l2=new T.PointLight(0x27e6ff,1.5,64); l1.position.set(-12,6,8); l2.position.set(12,6,-6); g.add(l1,l2);
   let acc=0;
-  return {group:g,obs:obs,name:"Disco Dandiya",key:"disco",look:{top:0x070216,bot:0x35105e,hs:0xa06bff,hg:0x1a0a30,hi:.55,sc:0xb08cff,si:.35,sp:[10,40,10],fn:34,ff:110,stars:true},
+  return {group:g,obs:obs,name:"Disco Dandiya",key:"disco",look:{top:0x070216,bot:0x35105e,hs:0xa06bff,hg:0x1a0a30,hi:.55,sc:0xb08cff,si:.35,sp:[10,40,10],fn:34,ff:110,stars:true,ex:1.0,bl:.75,vig:.5,sat:1.2},
     tick(t,dt){
       acc+=dt; if(acc>.35){ acc=0; for(let k=0;k<26;k++) hues[Math.floor(Math.random()*hues.length)]=Math.random(); ft.userData.g.fillStyle="#0a0418"; ft.userData.g.fillRect(0,0,512,512); draw(ft.userData.g,512,512); ft.needsUpdate=true; }
       const h=(t*.18)%1; ledM.color.setHSL(h,1,.6); led2.color.setHSL((h+.5)%1,1,.6);
@@ -334,10 +343,9 @@ function buildDisco(){
 function buildClass(){
   const g=new T.Group(), obs=[];
   plane(g,300,300,M(0x6a8f5a,{r:1}),0,-.04,0);
-  const wood=ctex(256,256,(c,w,h)=>{ c.fillStyle="#a8743a"; c.fillRect(0,0,w,h); for(let y=0;y<8;y++){ const s=(Math.random()*24-12)|0; c.fillStyle="rgb("+(168+s)+","+(116+s)+","+(58+s)+")"; c.fillRect(0,y*32+1,w,30); c.strokeStyle="rgba(60,30,10,.35)"; c.lineWidth=2; c.beginPath(); c.moveTo(0,y*32); c.lineTo(w,y*32); c.stroke(); for(let k=0;k<3;k++){ c.beginPath(); c.moveTo(Math.random()*w,y*32+4); c.lineTo(Math.random()*w,y*32+26); c.strokeStyle="rgba(90,50,20,.25)"; c.stroke(); } } },6);
-  plane(g,2*H+6,2*H+6,M(0xffffff,{map:wood,r:.55}),0,0,0);
+  plane(g,2*H+6,2*H+6,PM("planks",{size:512,n:8,rep:7,ns:2.4,nscale:1,color:[188,128,70]}),0,0,0);
   const wall=ctex(256,256,(c,w,h)=>{ c.fillStyle="#f4e2b0"; c.fillRect(0,0,w,h); c.fillStyle="#3f8f6a"; c.fillRect(0,h*.62,w,h*.38); c.fillStyle="#2d6b4e"; c.fillRect(0,h*.62,w,6); c.fillStyle="#fff7e0"; c.fillRect(0,h-14,w,14); },5,1);
-  walls(g,M(0xffffff,{map:wall,r:.9}),13,5);
+  { const wn=BB.pbr("plaster",{size:256,rep:5,repY:1,ns:1.4,color:[255,255,255]}); walls(g,M(0xffffff,{map:wall,nmap:wn.nmap,rmap:wn.rmap,r:1,ns:.7}),13,5); }
   const iz=-H-.95;
   mk(g,BX(19,6.4,.3),M(0x6a4a2a,{r:.6}),0,6.4,iz);
   const chalk=ctex(768,256,(c,w,h)=>{ c.fillStyle="#2a4a3a"; c.fillRect(0,0,w,h); c.fillStyle="rgba(255,255,255,.06)"; for(let i=0;i<40;i++) c.fillRect(Math.random()*w,Math.random()*h,90,10); c.fillStyle="#fff"; c.textAlign="center"; c.textBaseline="middle"; c.font="700 54px 'Comic Sans MS',cursive,sans-serif"; c.fillText("TODAY: SKILL ISSUE 101",w/2,70); c.font="700 36px 'Comic Sans MS',cursive,sans-serif"; c.fillStyle="#ffe066"; c.fillText("Q1. Don't get touched. (5 marks)",w/2,140); c.fillStyle="#9ff3ff"; c.fillText("Sir ka beta: 99%   You: 0%  💀",w/2,200); });
@@ -359,14 +367,14 @@ function buildClass(){
     if((i+j)%3===0) dBook.push({x:x-.7,y:1.65,z:z,sx:.9,sy:.12,sz:.6,color:pick([0xff5a36,0x2ea8ff,0x3ddc84])});
     obs.push({x:x,z:z+.8,r:1.6});
   }
-  const dm=new T.MeshLambertMaterial({color:0xffffff});
+  const dm=new T.MeshStandardMaterial({color:0xffffff,roughness:.55,metalness:0});
   [dTop,dBody,dSeat,dBack,dLeg,dBook].forEach(list=>{ if(list.length) instanced(g,BX(1,1,1),dm,list,true); });
   mk(g,BX(6.5,1.5,2.4),M(0x6a3a1a,{r:.6}),0,.75,-H+4); mk(g,SP(.7,14,10),M(0x3a86ff,{r:.4,m:.3}),1.5,1.9,-H+4,{cast:true}); obs.push({x:-2,z:-H+4,r:1.9},{x:1.8,z:-H+4,r:1.9});
   mk(g,BX(2,10,6),M(0x5a3a22,{r:.7}),-H+1,5,-14); const books=[]; for(let k=0;k<30;k++) books.push({x:-H+2.3,y:1.4+Math.floor(k/6)*1.8,z:-16.2+(k%6)*.55,sx:.5,sy:1.2,sz:.4,color:pick([0xff5a36,0x2ea8ff,0xffd23f,0x3ddc84,0xff3df0])});
-  instanced(g,BX(1,1,1),new T.MeshLambertMaterial({color:0xffffff}),books,false); obs.push({x:-H+1,z:-14,r:2});
+  instanced(g,BX(1,1,1),new T.MeshStandardMaterial({color:0xffffff,roughness:.7}),books,false); obs.push({x:-H+1,z:-14,r:2});
   const planes=[]; for(let i=0;i<10;i++){ const m=mk(g,new T.ConeGeometry(.2,.9,3),B(pick([0xffffff,0xffe066,0x9ff3ff])),0,0,0,{rx:PI/2,glow:true}); planes.push({m:m,a:Math.random()*6.28,r:rnd(6,34),y:rnd(3.5,7),sp:rnd(.15,.35)*(Math.random()<.5?-1:1)}); }
   let dust=0;
-  return {group:g,obs:obs,name:"Last Bench Classroom",key:"classroom",look:{top:0x6cb8ff,bot:0xe6f6ff,hs:0xffffff,hg:0xb89868,hi:.9,sc:0xfff0d0,si:1.15,sp:[-25,36,10],fn:55,ff:150,stars:false},
+  return {group:g,obs:obs,name:"Last Bench Classroom",key:"classroom",look:{top:0x6cb8ff,bot:0xe6f6ff,hs:0xffffff,hg:0xb89868,hi:.9,sc:0xfff0d0,si:1.15,sp:[-25,36,10],fn:80,ff:190,stars:false,ex:.68,bl:.3,tint:[1.02,1,.97]},
     tick(t,dt){ planes.forEach(p=>{ p.a+=p.sp*dt; p.m.position.set(Math.cos(p.a)*p.r,p.y+Math.sin(t+p.r)*.5,Math.sin(p.a)*p.r); p.m.rotation.y=-p.a+(p.sp>0?PI:0); });
       dust-=dt; if(dust<=0){ dust=.25; emit(rnd(-H,H),rnd(2,8),rnd(-H,H),2,0xfff4cc,.25,2.2,-.05,.2); } }};
 }
@@ -374,17 +382,15 @@ function buildClass(){
 /* ---- 4. Taj Garden (dawn) ---- */
 function buildTaj(){
   const g=new T.Group(), obs=[];
-  const grass=ctex(256,256,(c,w,h)=>{ c.fillStyle="#3c9a4a"; c.fillRect(0,0,w,h); for(let i=0;i<900;i++){ c.fillStyle="rgba("+(30+Math.random()*50|0)+","+(110+Math.random()*60|0)+",60,.35)"; c.fillRect(Math.random()*w,Math.random()*h,2,6); } },14);
-  plane(g,300,300,M(0xffffff,{map:grass,r:1}),0,-.02,0);
-  const marble=ctex(256,256,(c,w,h)=>{ c.fillStyle="#f4efe4"; c.fillRect(0,0,w,h); c.fillStyle="#d8d0bd"; for(let i=0;i<4;i++)for(let j=0;j<4;j++) if((i+j)%2) c.fillRect(i*64,j*64,64,64); },8,8);
-  const mm=M(0xffffff,{map:marble,r:.35});
-  plane(g,3.6,2*H+4,mm,-5.2,.03,0); plane(g,3.6,2*H+4,mm,5.2,.03,0); plane(g,2*H+4,3.6,mm,0,.03,6);
-  const water=M(0x3fa9ff,{r:.06,m:.55,e:.3,ec:0x1a6fd0});
+  plane(g,300,300,PM("grass",{size:512,rep:40,ns:1.4,nscale:.8}),0,-.02,0);
+  const pathM=PM("marble",{size:512,n:2,rep:1,repY:23,ns:1.2,nscale:.8}), crossM=PM("marble",{size:512,n:2,rep:23,repY:1,ns:1.2,nscale:.8}), mm=PM("marble",{size:256,n:2,rep:2,repY:5,ns:1.2,nscale:.8});
+  plane(g,3.6,2*H+4,pathM,-5.2,.03,0); plane(g,3.6,2*H+4,pathM,5.2,.03,0); plane(g,2*H+4,3.6,crossM,0,.03,6);
+  const wn=BB.pbr("water",{size:256,rep:3,repY:10,ns:3.2}), water=M(0x1a74b4,{r:.05,m:.0,e:.12,ec:0x0a4a86,tr:.86,env:2,nmap:wn.nmap,rmap:wn.rmap,ns:.6});
   const tz=-H+3.5, poolA=tz+16, poolB=H-6, poolL=poolB-poolA, poolC=(poolA+poolB)/2;
   plane(g,6.2,poolL,water,0,.06,poolC);
   mk(g,BX(6.8,.08,poolL+.6),mm,0,.01,poolC,{cast:false});
   mk(g,BX(27,1.8,18),M(0xf6f1e6,{r:.4}),0,.9,tz); mk(g,BX(28,.4,19),M(0xe8e0cc,{r:.4}),0,.2,tz);
-  const wm=M(0xfffaf0,{r:.3});
+  const wmT=BB.pbr("marble",{size:512,n:1,rep:1,ns:.6,light:[236,230,218],dark:[236,230,218]}); const wm=M(0xffffff,{map:wmT.map,nmap:wmT.nmap,rmap:wmT.rmap,r:1,ns:.4});
   mk(g,BX(11,9,11),wm,0,6.3,tz); mk(g,BX(11,9,11),wm,0,6.3,tz,{ry:PI/4,s:.9});
   mk(g,BX(5.6,7.6,.5),M(0xece6d6,{r:.4}),0,5.6,tz+5.55); mk(g,BX(4.2,6.2,.6),M(0x2a2a3a,{r:.7}),0,5.2,tz+5.6); mk(g,CY(2.1,2.1,.6,18),M(0x2a2a3a,{r:.7}),0,8.3,tz+5.6,{rx:PI/2});
   [-4.3,4.3].forEach(dx=>{ mk(g,BX(1.8,4.2,.3),M(0x2a2a3a,{r:.7}),dx,5.2,tz+5.55); });
@@ -399,15 +405,16 @@ function buildTaj(){
   });
   [-9,-3,3,9].forEach(x=>obs.push({x:x,z:tz,r:4.4}));
   const placed=[];
+  const hedgeM=PM("grass",{size:256,rep:2,ns:2.4,nscale:1,dark:[14,58,24],light:[48,116,42]}), pineM=PM("grass",{size:256,rep:3,ns:2.6,nscale:1.2,dark:[10,48,28],light:[34,98,52]});
   const bedZ=[]; for(let z=tz+14;z<H-8;z+=12) bedZ.push(z);
-  bedZ.forEach(z=>[-9.5,9.5].forEach(x=>{ mk(g,BX(2.2,1.3,8),M(0x1f7a35,{r:.9}),x,.65,z); [-2.6,0,2.6].forEach(dz=>obs.push({x:x,z:z+dz,r:1.4})); placed.push({x:x,z:z}); }));
+  bedZ.forEach(z=>[-9.5,9.5].forEach(x=>{ mk(g,BX(2.2,1.3,8),hedgeM,x,.65,z); [-2.6,0,2.6].forEach(dz=>obs.push({x:x,z:z+dz,r:1.4})); placed.push({x:x,z:z}); }));
   const fl=[]; [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{ for(let k=0;k<90;k++) fl.push({x:sx*rnd(13,H-3),y:.3,z:(sz<0?rnd(-H+14,-1):rnd(8,H-4)),s:rnd(.16,.26),color:pick([0xff4d6d,0xffd23f,0xff8a1f,0xff3df0,0xffffff,0x9b5de5])}); });
-  instanced(g,SP(1,6,5),new T.MeshLambertMaterial({color:0xffffff}),fl,false);
-  scatter(20,7,4,H,(x,z)=>Math.abs(x)<9||z<-H+14,placed).forEach(p=>{ mk(g,CY(.25,.3,1,6),M(0x4a2f1a),p.x,.5,p.z); mk(g,CY(0,1.35,5.4,8),M(0x1a6b34,{r:.9}),p.x,3.4,p.z); obs.push({x:p.x,z:p.z,r:1.1}); });
+  instanced(g,SP(1,6,5),new T.MeshStandardMaterial({color:0xffffff,roughness:.6}),fl,false);
+  scatter(20,7,4,H,(x,z)=>Math.abs(x)<9||z<-H+14,placed).forEach(p=>{ mk(g,CY(.25,.3,1,6),M(0x4a2f1a),p.x,.5,p.z); [[2.1,1.55,2.6],[3.5,1.25,2.4],[4.8,.9,2.2]].forEach(([y,r,hh])=>mk(g,CY(0,r,hh,12),pineM,p.x,y,p.z)); obs.push({x:p.x,z:p.z,r:1.1}); });
   const fz=poolC; mk(g,CY(1.7,1.9,.6,20),M(0xf4efe4,{r:.3}),0,.3,fz); mk(g,CY(.3,.4,2.2,10),M(0xf4efe4,{r:.3}),0,1.6,fz); mk(g,SP(.7,12,8),M(0xf4efe4,{r:.3}),0,2.8,fz); obs.push({x:0,z:fz,r:1.9});
   let sp=0;
-  return {group:g,obs:obs,name:"Taj Garden",key:"taj",look:{top:0x4e6fd6,bot:0xffc9b0,hs:0xfff0e0,hg:0x6a8a5a,hi:.8,sc:0xffd9aa,si:1.2,sp:[34,22,-14],fn:55,ff:150,stars:false},
-    tick(t,dt){ water.emissiveIntensity=.3+Math.sin(t*1.5)*.08; sp-=dt; if(sp<=0){ sp=.06; emit(0,2.9,fz,3,0xbfe6ff,1.4,1.2,7,4.5); } }};
+  return {group:g,obs:obs,name:"Taj Garden",key:"taj",look:{top:0x4e6fd6,bot:0xffc9b0,hs:0xfff0e0,hg:0x6a8a5a,hi:.8,sc:0xffd9aa,si:1.2,sp:[34,22,-14],fn:55,ff:150,stars:false,ex:.72,bl:.35,tint:[1.03,1,.95],sat:1.1},
+    tick(t,dt){ wn.nmap.offset.set(t*.012,-t*.03); wn.rmap.offset.copy(wn.nmap.offset); water.emissiveIntensity=.14+Math.sin(t*1.5)*.04; sp-=dt; if(sp<=0){ sp=.06; emit(0,2.9,fz,3,0xbfe6ff,1.4,1.2,7,4.5); } }};
 }
 
 W.MAPS=[

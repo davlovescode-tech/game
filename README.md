@@ -43,3 +43,11 @@ Repo **Settings > Pages**: Source = *Deploy from a branch*, Branch = `main`, fol
 - Up to 8 humans per room, plus `mpBots` fake players. The host's browser runs the game; if the host leaves, the room ends.
 - Joining mid-round waits for the next lobby. Uses the free public PeerJS server (WebRTC); players on very strict networks may need a TURN server (`iceServers` in `config.js`).
 - Admin commands only work for the host.
+
+
+## Graphics (realistic pipeline)
+- Linear-light rendering, filmic (ACES) tone mapping, image-based lighting and reflections, soft shadows that follow you.
+- HDR + MSAA (desktop) + bloom + colour grade + vignette. If a device is slow, the game turns bloom down, then post-processing off, then lowers resolution and shadows by itself.
+- Every floor, wall and cloth is a procedural PBR material (albedo + normal + roughness) generated in code, so there are no big texture files to download.
+- three.js is bundled in `lib/` (no CDN needed; the CDN is only a fallback). Debug switches: `?post=0` (no post-processing), `?msaa=0`.
+- Admin extras: `/cam yaw pitch dist`, `/pos x z`, `/go` (skip results screen).

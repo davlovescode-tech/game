@@ -88,7 +88,7 @@ async function buildChaserMats(){
   /* one variant per face number; never fewer than 10 so there are always 10+ different squares */
   const n=Math.max(10,FACE_URLS.length), canv=[];
   for(let i=0;i<n;i++){ const im=FACE_URLS[i]?await loadImg(FACE_URLS[i]):null; canv.push(im?cropToCanvas(im,256):placeholderCanvas(i)); }
-  chaserMats=canv.map(c=>{ const t=new T.CanvasTexture(c); t.anisotropy=4; return new T.MeshBasicMaterial({map:t}); });
+  chaserMats=canv.map(c=>{ const t=new T.CanvasTexture(c); t.anisotropy=4; return new T.MeshStandardMaterial({map:t,emissiveMap:t,emissive:0xffffff,emissiveIntensity:.5,roughness:.3,metalness:0,envMapIntensity:1.3}); });
 }
 
 /* ---------- state ---------- */
@@ -265,8 +265,11 @@ function botThink(r,dt){
 
 /* ---------- chasers ---------- */
 let chasers=[];
-const frameMat=BB.M(0xffd23f,{m:.8,r:.3,e:.3});
+const frameMat=BB.M(0xffc531,{m:1,r:.2,env:2});
+const rimMat=new T.MeshBasicMaterial({color:new T.Color(0xff2436).multiplyScalar(3.2),fog:false});
+const studG=new T.SphereGeometry(.2,14,10);
 const shadowMat=new T.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.35,depthWrite:false});
+let ambT=0;
 const SQ_W=3.6, SQ_Y=2.5, SQ_HIT=1.5;   // square size, hover height, touch radius
 let sqBag=[];
 function nextSquare(){ if(!sqBag.length) sqBag=chaserMats.map((_,i)=>i).sort(()=>Math.random()-.5); return sqBag.pop(); }
@@ -279,10 +282,14 @@ function squareSound(i){
 }
 function createChaser(idx,x,z){
   const mat=chaserMats[idx%chaserMats.length], g=new T.Group();
-  const fr=new T.Mesh(BB.BX(SQ_W,SQ_W,.3),frameMat); fr.castShadow=true; g.add(fr);
-  const pw=SQ_W-.36;
-  const pf=new T.Mesh(new T.PlaneGeometry(pw,pw),mat); pf.position.z=.17; g.add(pf);
-  const pb=new T.Mesh(new T.PlaneGeometry(pw,pw),mat); pb.position.z=-.17; pb.rotation.y=PI; g.add(pb);
+  const bw=.34, hw=SQ_W/2;
+  [[0,hw-bw/2,SQ_W,bw],[0,-hw+bw/2,SQ_W,bw],[-hw+bw/2,0,bw,SQ_W-2*bw],[hw-bw/2,0,bw,SQ_W-2*bw]].forEach(b=>{ const m=new T.Mesh(BB.BX(b[2],b[3],.36),frameMat); m.position.set(b[0],b[1],0); m.castShadow=true; g.add(m); });
+  [[0,hw-bw-.04,SQ_W-2*bw,.07],[0,-hw+bw+.04,SQ_W-2*bw,.07],[-hw+bw+.04,0,.07,SQ_W-2*bw-.15],[hw-bw-.04,0,.07,SQ_W-2*bw-.15]].forEach(b=>{ const m=new T.Mesh(BB.BX(b[2],b[3],.4),rimMat); m.position.set(b[0],b[1],0); g.add(m); });
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(c=>{ const m=new T.Mesh(studG,frameMat); m.position.set(c[0]*hw,c[1]*hw,0); m.scale.z=1.1; g.add(m); });
+  const pw=SQ_W-2*bw-.1;
+  const bk=new T.Mesh(BB.BX(pw,pw,.14),BB.M(0x120810,{r:.5})); g.add(bk);
+  const pf=new T.Mesh(new T.PlaneGeometry(pw,pw),mat); pf.position.z=.13; g.add(pf);
+  const pb=new T.Mesh(new T.PlaneGeometry(pw,pw),mat); pb.position.z=-.13; pb.rotation.y=PI; g.add(pb);
   const glow=BB.glowSprite(0xff3040,SQ_W*2.5,.5); glow.position.z=-.5; g.add(glow);
   const sh=new T.Mesh(new T.CircleGeometry(1.5,16),shadowMat); sh.rotation.x=-PI/2; sh.position.y=.04; scene.add(sh);
   g.position.set(x,SQ_Y,z); scene.add(g);
@@ -513,8 +520,13 @@ function frame(t){
   let raw=(t-last)/1000; last=t; if(!(raw>0)) raw=.016; const dt=Math.min(raw,.05);
   time+=dt;
   if(raw>1/38&&raw<.5) slow+=raw; else slow=Math.max(0,slow-dt*.5);
-  if(slow>2.5){ slow=0; if(Q.pr>.8){ Q.pr=Math.max(.75,Q.pr-.25); BB.resize(); } else if(Q.shadows) BB.setShadows(false); }
+  if(slow>2.5){ slow=0; if(Q.post&&BB.look.bloom>0&&!Q.noBloom){ Q.noBloom=true; Q.bloomScale=.5; BB.postLook(); } else if(Q.post){ BB.setPost(false); } else if(Q.pr>.8){ Q.pr=Math.max(.75,Q.pr-.25); BB.resize(); } else if(Q.shadows) BB.setShadows(false); }
 
+  /* ambient motes drifting in the light: dust in the bazaar, fireflies in the garden, sparkle at night */
+  ambT-=dt; if(ambT<=0&&env&&state!=="title"){
+    ambT=Q.post?.07:.14; const k=env.key||"hub", ac={bazaar:0xffc98a,taj:0xe8ffb0,classroom:0xfff6dd,disco:0xff7ae8,hub:0xffd27a}[k]||0xffffff;
+    BB.emit(camX+rnd(-16,16),rnd(.8,9),camZ+rnd(-16,16),1,ac,.5,5.5,-.03,.15);
+  }
   BB.updateParticles(dt); BB.updateBubbles(dt);
   if(env&&env.tick) env.tick(time,dt);
   if(hub.group.visible) fireworks(dt);
@@ -606,11 +618,11 @@ function frame(t){
     const html=a.map(x=>"<b>"+x+"</b>").join(""); if(html!==lastChips){ $("chips").innerHTML=html; lastChips=html; }
     if(hintT<12){ hintT+=.1; if(hintT>=9) hintEl.style.opacity="0"; }
   }
-  BB.renderer.render(scene,camera);
+  BB.render(t);
 }
 
 /* ---------- boot ---------- */
-hub=seeded(777,()=>W.buildHub()); scene.add(hub.group); env=hub; BB.setLook(hub.look);
+hub=seeded(777,()=>W.buildHub()); scene.add(hub.group); env=hub; BB.setLook(hub.look); BB.initPost();
 const botNameBag=CFG.botNames.slice().sort(()=>Math.random()-.5);
 for(let i=0;i<CFG.botCount;i++){
   const names=botNameBag;
@@ -688,7 +700,7 @@ const num=(s,d,lo,hi)=>{ const v=parseFloat(s); return isFinite(v)?clamp(v,lo,hi
 const ADMIN_HELP=[
   "<b>round</b>  /start  /end  /time s  /lobby s  /rounds n  /reset",
   "<b>squares</b>  /spawn n  /clear  /freeze s  /grav s  /hyper s  /event [1-6]",
-  "<b>you</b>  /god  /shield  /speed n  /pts n  /kill name  /killbots  /tp juice|chaat|davi",
+  "<b>you</b>  /god  /shield  /speed n  /pts n  /kill name  /killbots  /tp juice|chaat|davi  /pos x z  /cam yaw pitch dist",
   "<b>daviccino</b>  /say text  /ann text  /fx  /her on|off",
   "<b>world</b>  /map bazaar|disco|classroom|taj  /quality low|high",
   "<b>tools</b>  /hash word (new passcode number for config.js)  /lock  /status"
@@ -703,6 +715,7 @@ function runAdmin(line){
     case "status": ok("state="+state+" timer="+Math.ceil(timer)+" alive="+runners.filter(r=>r.alive).length+"/"+runners.length+" squares="+chasers.length+" god="+ADM.god+" map="+(nextDef?nextDef.name:"?")); break;
     case "start": if(inLobby){ timer=.01; ok("starting"); } else no("only in the lobby"); break;
     case "end": if(inPlay){ timer=.01; grace=0; ok("ending round"); } else no("only during a round"); break;
+    case "go": if(state==="results"){ timer=.01; ok("skipping results"); } else no("only on the results screen"); break;
     case "time": { const s=num(a[0],CFG.roundSeconds,5,600); CFG.roundSeconds=s; if(inPlay) timer=s; ok("round length "+s+"s"); break; }
     case "lobby": { const s=num(a[0],CFG.lobbySeconds,3,600); CFG.lobbySeconds=s; if(inLobby) timer=s; ok("lobby length "+s+"s"); break; }
     case "rounds": { const n=Math.round(num(a[0],CFG.roundsPerGame,1,9)); CFG.roundsPerGame=n; updateLB(); ok("rounds per game "+n); break; }
@@ -727,6 +740,8 @@ function runAdmin(line){
     case "map": { const m=W.MAPS.find(x=>x.key===(a[0]||"").toLowerCase()); if(m){ nextDef=m; prebuilt=false; bc({t:"map",key:m.key}); updateLB(); ok("next map: "+m.name); } else no("bazaar | disco | classroom | taj"); break; }
     case "quality": if(a[0]==="low"){ Q.pr=.75; BB.setShadows(false); BB.resize(); ok("low quality"); } else if(a[0]==="high"){ Q.pr=Math.min(devicePixelRatio||1,TOUCH?1.5:2); BB.setShadows(!TOUCH); BB.resize(); ok("high quality"); } else no("/quality low|high"); break;
     case "hash": if(rest){ ok("adminHash: "+cyrb53(rest,7)+"   <i>(paste into config.js)</i>"); } else no("/hash yournewpasscode"); break;
+    case "cam": { camYaw=num(a[0],camYaw,-20,20); camPitch=num(a[1],camPitch,.1,1.25); camDistT=camDist=num(a[2],camDistT,3,40); ok("camera set"); break; }
+    case "pos": { const r=meR(); if(r){ r.x=num(a[0],r.x,-60,60); r.z=num(a[1],r.z,-60,60); ok("moved"); } break; }
     case "lock": ADM.authed=false; try{ sessionStorage.removeItem("bb3d-adm"); }catch(e){} admEls.in.type="password"; ok("locked"); break;
     default: no("unknown command. /help");
   }
