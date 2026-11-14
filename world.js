@@ -57,6 +57,25 @@ function facadeMat(base,rep){
   const t=BB.pbr("plaster",{size:256,rep:rep,repY:1,ns:1,color:[255,255,255]});
   return M(0xffffff,{map:map,emap:emap,e:1.25,ec:0xffffff,nmap:t.nmap,rmap:t.rmap,r:1,ns:.3});
 }
+
+/* ---------- photographic textures + sun shafts ---------- */
+function photo(url,rep,srgb){ const t=new T.TextureLoader().load(url); t.wrapS=t.wrapT=T.RepeatWrapping; t.repeat.set(rep,rep); t.anisotropy=8; if(srgb) t.encoding=T.sRGBEncoding; return t; }
+/* soft volumetric light shafts that always lean along the sun direction of the current sky (set by the HDR) */
+function sunShafts(g,n,area,opt){
+  opt=opt||{}; const len=opt.len||46, op=opt.op||.07;
+  const tex=ctex(64,256,(c,w,h)=>{
+    const gr=c.createLinearGradient(0,0,w,0); gr.addColorStop(0,"rgba(255,255,255,0)"); gr.addColorStop(.5,"rgba(255,255,255,1)"); gr.addColorStop(1,"rgba(255,255,255,0)"); c.fillStyle=gr; c.fillRect(0,0,w,h);
+    c.globalCompositeOperation="destination-in"; const v=c.createLinearGradient(0,0,0,h); v.addColorStop(0,"rgba(0,0,0,0)"); v.addColorStop(.25,"rgba(0,0,0,.7)"); v.addColorStop(.6,"rgba(0,0,0,1)"); v.addColorStop(1,"rgba(0,0,0,.25)"); c.fillStyle=v; c.fillRect(0,0,w,h);
+  });
+  const mat=new T.MeshBasicMaterial({map:tex,color:opt.color||0xffe2b0,transparent:true,opacity:op,blending:T.AdditiveBlending,depthWrite:false,fog:false,side:T.DoubleSide});
+  const geo=new T.PlaneGeometry(1,1), list=[], up=new T.Vector3(0,1,0), fb=new T.Vector3(-.5,.7,.35).normalize();
+  for(let i=0;i<n;i++){
+    const grp=new T.Group(), w=rnd(3,8)*(opt.wide||1);
+    for(let k=0;k<2;k++){ const m=new T.Mesh(geo,mat); m.scale.set(w,len,1); m.position.y=len/2-4; m.rotation.y=k*PI/2; m.renderOrder=6; grp.add(m); }
+    grp.position.set(rnd(-area,area),0,rnd(-area,area)); g.add(grp); list.push(grp);
+  }
+  return {update:function(){ const d=BB.sunDir||fb; list.forEach(o=>o.quaternion.setFromUnitVectors(up,d)); }};
+}
 const hex2=n=>[(n>>16)&255,(n>>8)&255,n&255];
 const PM=(kind,o)=>BB.pbrMat(kind,o);
 function scatter(n,minD,margin,H,avoid,placed){
@@ -289,7 +308,9 @@ function buildBazaar(){
   const bl=[]; [-28,-14,0,14,28].forEach(z=>string(bl,[-H-3,9,z],[H+3,9,z],1.8,40)); [-28,-14,14,28].forEach(x=>string(bl,[x,9,-H-3],[x,9,H+3],1.8,40)); bulbs(g,bl);
   const lan=[]; for(let i=0;i<50;i++) lan.push({x:rnd(-H,H),y:rnd(5.5,8),z:rnd(-H,H),s:rnd(.3,.5),color:pick([0xff8a1f,0xff3d7a,0xffd23f])});
   instanced(g,SP(1,8,6),new T.MeshBasicMaterial({color:0xffffff,fog:false}),lan,false);
-  return {group:g,obs:obs,name:"Gali Bazaar",key:"bazaar",look:{top:0x5a3b9c,bot:0xffb27a,hs:0xffd9b0,hg:0x6a4a3a,hi:.75,sc:0xffc58a,si:1.3,sp:[-26,22,18],fn:48,ff:135,stars:false,hdr:'assets/env/venice_sunset_1k.hdr',hdrk:.6,ex:.82,bl:.4,tint:[1.04,1,.94],sat:1.12}};
+  const shf=sunShafts(g,10,H-4,{op:.06,len:44,color:0xffc98a});
+  return {group:g,obs:obs,name:"Gali Bazaar",key:"bazaar",look:{top:0x5a3b9c,bot:0xffb27a,hs:0xffd9b0,hg:0x6a4a3a,hi:.75,sc:0xffc58a,si:1.3,sp:[-26,22,18],fn:48,ff:135,stars:false,hdr:'assets/env/venice_sunset_1k.hdr',hdrk:.6,ex:.74,bl:.4,tint:[1.04,1,.94],sat:1.12},
+    tick(){ shf.update(); }};
 }
 
 /* ---- 2. Disco Dandiya (neon night) ---- */
@@ -344,7 +365,7 @@ function buildDisco(){
 function buildClass(){
   const g=new T.Group(), obs=[];
   plane(g,300,300,M(0x6a8f5a,{r:1}),0,-.04,0);
-  plane(g,2*H+6,2*H+6,PM("planks",{size:512,n:8,rep:7,ns:2.4,nscale:1,color:[188,128,70]}),0,0,0);
+  plane(g,2*H+6,2*H+6,PM("planks",{size:512,n:8,rep:7,ns:1.7,nscale:1,color:[168,118,74]}),0,0,0);
   const wall=ctex(256,256,(c,w,h)=>{ c.fillStyle="#f4e2b0"; c.fillRect(0,0,w,h); c.fillStyle="#3f8f6a"; c.fillRect(0,h*.62,w,h*.38); c.fillStyle="#2d6b4e"; c.fillRect(0,h*.62,w,6); c.fillStyle="#fff7e0"; c.fillRect(0,h-14,w,14); },5,1);
   { const wn=BB.pbr("plaster",{size:256,rep:5,repY:1,ns:1.4,color:[255,255,255]}); walls(g,M(0xffffff,{map:wall,nmap:wn.nmap,rmap:wn.rmap,r:1,ns:.7}),13,5); }
   const iz=-H-.95;
@@ -353,9 +374,17 @@ function buildClass(){
   const cb=new T.Mesh(new T.PlaneGeometry(18,5.6),new T.MeshBasicMaterial({map:chalk})); cb.position.set(0,6.4,iz+.2); g.add(cb);
   const clock=ctex(128,128,(c)=>{ c.fillStyle="#fff"; c.beginPath(); c.arc(64,64,60,0,PI*2); c.fill(); c.lineWidth=6; c.strokeStyle="#222"; c.stroke(); c.lineWidth=5; c.beginPath(); c.moveTo(64,64); c.lineTo(64,24); c.moveTo(64,64); c.lineTo(90,78); c.stroke(); });
   const ck=new T.Mesh(new T.CircleGeometry(1.2,20),new T.MeshBasicMaterial({map:clock})); ck.position.set(0,11,iz+.2); g.add(ck);
+  /* windows: bright daylight through a four-pane frame (sky gradient + soft glare + wooden mullions) */
+  const winTex=ctex(256,256,(c,w,h)=>{
+    const gr=c.createLinearGradient(0,0,0,h); gr.addColorStop(0,"#8ec5ff"); gr.addColorStop(1,"#f4fbff"); c.fillStyle=gr; c.fillRect(0,0,w,h);
+    const gl=c.createRadialGradient(w*.3,h*.7,4,w*.3,h*.7,w*.7); gl.addColorStop(0,"rgba(255,255,255,.9)"); gl.addColorStop(1,"rgba(255,255,255,0)"); c.fillStyle=gl; c.fillRect(0,0,w,h);
+    c.fillStyle="#5a3d22"; c.fillRect(w/2-5,0,10,h); c.fillRect(0,h/2-5,w,10); c.fillRect(0,0,w,9); c.fillRect(0,h-9,w,9); c.fillRect(0,0,9,h); c.fillRect(w-9,0,9,h);
+    c.fillStyle="rgba(0,0,0,.18)"; c.fillRect(0,h-9,w,3);
+  });
+  const winMat=new T.MeshBasicMaterial({map:winTex,fog:false,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-4});
   [-1,1].forEach(sd=>{ for(let k=0;k<6;k++){ const z=-25+k*10, x=sd*(H+.95);
     mk(g,BX(.3,5.6,5.6),M(0x4a3a2a,{r:.6}),x+sd*.05,7,z);
-    const wn=new T.Mesh(new T.PlaneGeometry(5,5),new T.MeshBasicMaterial({color:0xcfeaff,fog:false})); wn.position.set(x-sd*.2,7,z); wn.rotation.y=sd>0?-PI/2:PI/2; g.add(wn); } });
+    const wn=new T.Mesh(new T.PlaneGeometry(5,5),winMat); wn.position.set(x-sd*.4,7,z); wn.rotation.y=sd>0?-PI/2:PI/2; g.add(wn); } });
   const dc=[0x7a3a1a,0x8a4a22,0x6a3a2a];
   const dTop=[],dBody=[],dSeat=[],dBack=[],dLeg=[],dBook=[];
   for(let i=0;i<7;i++)for(let j=0;j<5;j++){
@@ -374,16 +403,16 @@ function buildClass(){
   mk(g,BX(2,10,6),M(0x5a3a22,{r:.7}),-H+1,5,-14); const books=[]; for(let k=0;k<30;k++) books.push({x:-H+2.3,y:1.4+Math.floor(k/6)*1.8,z:-16.2+(k%6)*.55,sx:.5,sy:1.2,sz:.4,color:pick([0xff5a36,0x2ea8ff,0xffd23f,0x3ddc84,0xff3df0])});
   instanced(g,BX(1,1,1),new T.MeshStandardMaterial({color:0xffffff,roughness:.7}),books,false); obs.push({x:-H+1,z:-14,r:2});
   const planes=[]; for(let i=0;i<10;i++){ const m=mk(g,new T.ConeGeometry(.2,.9,3),B(pick([0xffffff,0xffe066,0x9ff3ff])),0,0,0,{rx:PI/2,glow:true}); planes.push({m:m,a:Math.random()*6.28,r:rnd(6,34),y:rnd(3.5,7),sp:rnd(.15,.35)*(Math.random()<.5?-1:1)}); }
-  let dust=0;
-  return {group:g,obs:obs,name:"Last Bench Classroom",key:"classroom",look:{top:0x6cb8ff,bot:0xe6f6ff,hs:0xffffff,hg:0xb89868,hi:.9,sc:0xfff0d0,si:1.15,sp:[-25,36,10],fn:80,ff:190,stars:false,hdr:'assets/env/pedestrian_overpass_1k.hdr',hdrk:.5,ex:.68,bl:.3,tint:[1.02,1,.97]},
-    tick(t,dt){ planes.forEach(p=>{ p.a+=p.sp*dt; p.m.position.set(Math.cos(p.a)*p.r,p.y+Math.sin(t+p.r)*.5,Math.sin(p.a)*p.r); p.m.rotation.y=-p.a+(p.sp>0?PI:0); });
+  const shf=sunShafts(g,8,H-8,{op:.05,len:40,color:0xfff0d0,wide:1.3}); let dust=0;
+  return {group:g,obs:obs,name:"Last Bench Classroom",key:"classroom",look:{top:0x6cb8ff,bot:0xe6f6ff,hs:0xffffff,hg:0xb89868,hi:.9,sc:0xfff0d0,si:1.15,sp:[-25,36,10],fn:80,ff:190,stars:false,hdr:'assets/env/pedestrian_overpass_1k.hdr',nodome:true,hdrk:.5,ex:.68,bl:.3,tint:[1.02,1,.97]},
+    tick(t,dt){ shf.update(); planes.forEach(p=>{ p.a+=p.sp*dt; p.m.position.set(Math.cos(p.a)*p.r,p.y+Math.sin(t+p.r)*.5,Math.sin(p.a)*p.r); p.m.rotation.y=-p.a+(p.sp>0?PI:0); });
       dust-=dt; if(dust<=0){ dust=.25; emit(rnd(-H,H),rnd(2,8),rnd(-H,H),2,0xfff4cc,.25,2.2,-.05,.2); } }};
 }
 
 /* ---- 4. Taj Garden (dawn) ---- */
 function buildTaj(){
   const g=new T.Group(), obs=[];
-  plane(g,300,300,PM("grass",{size:512,rep:40,ns:1.4,nscale:.8}),0,-.02,0);
+  plane(g,300,300,M(0xd6e8c4,{map:photo("assets/textures/grass.jpg",26,true),nmap:photo("assets/textures/grass_n.jpg",26,false),r:1,ns:.9}),0,-.02,0);
   const pathM=PM("marble",{size:512,n:2,rep:1,repY:23,ns:1.2,nscale:.8}), crossM=PM("marble",{size:512,n:2,rep:23,repY:1,ns:1.2,nscale:.8}), mm=PM("marble",{size:256,n:2,rep:2,repY:5,ns:1.2,nscale:.8});
   plane(g,3.6,2*H+4,pathM,-5.2,.03,0); plane(g,3.6,2*H+4,pathM,5.2,.03,0); plane(g,2*H+4,3.6,crossM,0,.03,6);
   const wn=BB.pbr("water",{size:256,rep:3,repY:10,ns:3.2}), water=M(0x1a74b4,{r:.05,m:.0,e:.12,ec:0x0a4a86,tr:.86,env:2,nmap:wn.nmap,rmap:wn.rmap,ns:.6});
@@ -413,9 +442,9 @@ function buildTaj(){
   instanced(g,SP(1,6,5),new T.MeshStandardMaterial({color:0xffffff,roughness:.6}),fl,false);
   scatter(20,7,4,H,(x,z)=>Math.abs(x)<9||z<-H+14,placed).forEach(p=>{ mk(g,CY(.25,.3,1,6),M(0x4a2f1a),p.x,.5,p.z); [[2.1,1.55,2.6],[3.5,1.25,2.4],[4.8,.9,2.2]].forEach(([y,r,hh])=>mk(g,CY(0,r,hh,12),pineM,p.x,y,p.z)); obs.push({x:p.x,z:p.z,r:1.1}); });
   const fz=poolC; mk(g,CY(1.7,1.9,.6,20),M(0xf4efe4,{r:.3}),0,.3,fz); mk(g,CY(.3,.4,2.2,10),M(0xf4efe4,{r:.3}),0,1.6,fz); mk(g,SP(.7,12,8),M(0xf4efe4,{r:.3}),0,2.8,fz); obs.push({x:0,z:fz,r:1.9});
-  let sp=0;
-  return {group:g,obs:obs,name:"Taj Garden",key:"taj",look:{top:0x4e6fd6,bot:0xffc9b0,hs:0xfff0e0,hg:0x6a8a5a,hi:.8,sc:0xffd9aa,si:1.2,sp:[34,22,-14],fn:55,ff:150,stars:false,hdr:'assets/env/royal_esplanade_1k.hdr',hdrk:.55,ex:.72,bl:.35,tint:[1.03,1,.95],sat:1.1},
-    tick(t,dt){ wn.nmap.offset.set(t*.012,-t*.03); wn.rmap.offset.copy(wn.nmap.offset); water.emissiveIntensity=.14+Math.sin(t*1.5)*.04; sp-=dt; if(sp<=0){ sp=.06; emit(0,2.9,fz,3,0xbfe6ff,1.4,1.2,7,4.5); } }};
+  const shf=sunShafts(g,9,H-6,{op:.055,len:50}); let sp=0;
+  return {group:g,obs:obs,name:"Taj Garden",key:"taj",look:{top:0x4e6fd6,bot:0xffc9b0,hs:0xfff0e0,hg:0x6a8a5a,hi:.8,sc:0xffd9aa,si:1.2,sp:[34,22,-14],fn:60,ff:190,stars:false,hdr:'assets/env/venice_sunset_1k.hdr',hdrRot:.5,hdrk:.55,ex:.6,bl:.35,tint:[1.03,1,.95],sat:1.1},
+    tick(t,dt){ shf.update(); wn.nmap.offset.set(t*.012,-t*.03); wn.rmap.offset.copy(wn.nmap.offset); water.emissiveIntensity=.14+Math.sin(t*1.5)*.04; sp-=dt; if(sp<=0){ sp=.06; emit(0,2.9,fz,3,0xbfe6ff,1.4,1.2,7,4.5); } }};
 }
 
 W.MAPS=[

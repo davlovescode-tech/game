@@ -55,5 +55,7 @@ Repo **Settings > Pages**: Source = *Deploy from a branch*, Branch = `main`, fol
 
 ## Realistic characters and skies
 - Players are a real skinned 3D human model (`assets/models/Soldier.glb`, a Mixamo character from the three.js examples) with idle / walk / run animations, tinted per player. If the file fails to load, the game falls back to the older stylised characters automatically.
-- Daylight maps use real HDR sky lighting from `assets/env/` (three.js example HDRIs).
-- Credit: Soldier model and animations from Mixamo (via three.js examples, MIT-licensed repo); HDRIs from Poly Haven via three.js examples (CC0).
+- Motion is driven by how fast each player really moves, not by a timer: the walk and run clips are phase-locked and blended by ground speed (stride lengths measured from the clips), so feet match the ground instead of skating. On top of the clips: forward lean when accelerating, banking into turns, a leaping stride in the air with a landing squash, a head that tracks the nearest square, a flinch when a shield breaks, dust puffs on footsteps/landings, and a physical death tumble (knocked away from the square, one bounce, then settles).
+- Daylight maps use real HDR skies from `assets/env/` (three.js example HDRIs): the sky you see, the lighting, the reflections and the sun direction (shadows, light shafts) all come from the same panorama, and distance haze takes the horizon's colour.
+- Taj Garden's lawn uses a photographic grass texture (`assets/textures/grass.jpg` + `grass_n.jpg`, resized).
+- Credit: Soldier model and animations from Mixamo (via three.js examples, MIT-licensed repo); HDRIs from Poly Haven via three.js examples (CC0); grass texture from OpenGameArt ("Dark Grass" / "Backgrounds for top-down games"), licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/), slightly modified by resizing.

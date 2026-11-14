@@ -206,7 +206,7 @@ function placeRunners(where){
     }
     r.x=x; r.z=z; r.y=0; r.vy=0; r.alive=true; r.placed=true; r.tgt=null; r.idleT=rnd(0,2);
     r.yaw=where==="hub"?PI:rnd(0,PI*2);
-    r.av.group.rotation.set(0,r.yaw,0); r.av.group.position.set(x,0,z); r.av.shield.visible=false;
+    BB.resetAvatar(r.av); r.px=undefined; r.av.group.rotation.set(0,r.yaw,0); r.av.group.position.set(x,0,z); r.av.shield.visible=false;
     if(r.ghost){ r.nx=r.x; r.nz=r.z; r.ny=0; r.nyaw=r.yaw; r.nmv=0; }
   });
 }
@@ -221,9 +221,26 @@ function stepRunner(r,dt,wx,wz,jump){
 function poseRunner(r,dt){
   const a=r.av; a.group.position.set(r.x,r.y,r.z);
   let d=r.yaw-a.group.rotation.y; d=Math.atan2(Math.sin(d),Math.cos(d)); a.group.rotation.y+=d*Math.min(1,dt*12);
-  const sw=Math.sin(time*11)*.9*r.moving*(r.y>.05?.3:1);
-  a.legL.rotation.x=sw; a.legR.rotation.x=-sw; a.armL.rotation.x=-sw; a.armR.rotation.x=sw;
-  if(a.mixer) BB.stepReal(a,dt,r.moving,r.juiceT>0||hyperT>0,state==='lobby'||state==='title');
+  /* real ground speed from how far the runner actually moved, so legs match the ground (no skating) */
+  let sp=0, vy=r.vy||0;
+  if(r.px!==undefined){ const m=Math.hypot(r.x-r.px,r.z-r.pz); sp=m<4?m/Math.max(dt,.001):0; if(r.ghost) vy=(r.y-r.py)/Math.max(dt,.001); }
+  r.px=r.x; r.pz=r.z; r.py=r.y;
+  if(a.mixer){
+    let lx=null,lz=null;
+    if(state==="play"&&r.alive){ let bd=15; for(const c of chasers){ const dd=Math.hypot(c.x-r.x,c.z-r.z); if(dd<bd){ bd=dd; lx=c.x; lz=c.z; } } }
+    BB.animReal(a,dt,sp,r.y>.08,vy,lx,lz);
+    const A=a.an;
+    if(A&&A.step){
+      const near=Math.hypot(r.x-camX,r.z-camZ)<34;
+      if(near){ const fx=r.x-Math.sin(r.yaw)*.25, fz=r.z-Math.cos(r.yaw)*.25;
+        if(A.step===2){ emit(fx,.15,fz,7,0x7a6a58,1.7,.6,.4,.5); } else emit(fx,.12,fz,2,0x6e6050,.9,.5,.2,.35); }
+      if(r.isPlayer&&state!=="title"){ synth(A.step===2?70:95+Math.random()*25,.07,"sine",A.step===2?.05:.025,45); }
+      A.step=0;
+    }
+  } else {
+    const sw=Math.sin(time*11)*.9*r.moving*(r.y>.05?.3:1);
+    a.legL.rotation.x=sw; a.legR.rotation.x=-sw; a.armL.rotation.x=-sw; a.armR.rotation.x=sw;
+  }
   a.shield.visible=r.shield>0; if(r.shield>0) a.shield.scale.setScalar(1+Math.sin(time*6)*.05);
 }
 /* remote players (and everything on a guest's screen) just follow the last network position */
@@ -319,6 +336,7 @@ function ghostChasers(dt){
   chasers.forEach(c=>{ c.x+=(c.tx-c.x)*k; c.z+=(c.tz-c.z)*k; poseChaser(c,nearestAlive(c.x,c.z),freezeT>0); });
 }
 function shieldBreak(r){
+  BB.flinch(r.av);
   emit(r.x,1.5,r.z,40,0x4de1ff,7,.9,3,2); feed(r.name+"'s shield broke 🛡️");
   if(r.isPlayer){ daviSay(HER?"Not today. ✨":"Shield saved you. You're welcome 😎"); synth(880,.15,"triangle",.08,440); }
 }
@@ -405,7 +423,8 @@ function startRound(sp){
 function kill(r,c,over,fromNet){
   if(!r.alive) return;
   r.alive=false; r.pts=fromNet?over.pts:Math.floor(roundT);
-  r.av.group.rotation.z=PI/2; r.av.group.position.y=.6; r.av.legL.rotation.x=r.av.legR.rotation.x=0; r.av.shield.visible=false;
+  { const g=r.av.group, hit=c&&c.x!==undefined; BB.deathStart(r.av,hit?r.x-c.x:-Math.sin(g.rotation.y),hit?r.z-c.z:-Math.cos(g.rotation.y),1);   // knocked away from the square that touched it
+    r.av.legL.rotation.x=r.av.legR.rotation.x=0; r.av.shield.visible=false; }
   const msg=(r.isPlayer&&HER)?pick(SOFT):(fromNet?over.msg:nextMsg());
   if(!fromNet) bc({t:"k",id:r.id,msg:msg,pts:r.pts,ci:c?c.idx:-1});
   feed(r.name+": "+msg); BB.bubble(r.x,3.6,r.z,msg,"#ff4d6d");
@@ -572,7 +591,7 @@ function frame(t){
   if(keys.KeyQ) camYaw+=dt*2; if(keys.KeyR) camYaw-=dt*2;
 
   for(const r of runners){
-    if(!r.alive) continue;
+    if(!r.alive){ BB.deathStep(r.av,dt); continue; }
     if(r.isPlayer){ stepRunner(r,dt,pwx,pwz,state==="results"?false:wantJump); continue; }
     if(r.ghost){ ghostStep(r,dt); continue; }
     const j=r.wantJump; r.wantJump=false;

@@ -112,10 +112,28 @@ function envFor(L){
   const rt=pmrem.fromEquirectangular(eq); eq.dispose();
   return (envCache[key]=rt.texture);
 }
+/* the visible sky for HDR maps: samples the same equirect panorama three uses for lighting, so sun, sky and reflections all agree */
+const domeMat=new T.ShaderMaterial({
+  uniforms:{map:{value:null},k:{value:.85},hz:{value:new T.Color(0,0,0)}},
+  vertexShader:"varying vec3 vP;void main(){vP=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}",
+  fragmentShader:"uniform sampler2D map;uniform float k;uniform vec3 hz;varying vec3 vP;void main(){vec3 d=normalize(vP);vec2 uv=vec2(atan(d.z,d.x)*0.15915494+0.5,asin(clamp(d.y,-1.0,1.0))*0.31830989+0.5);vec3 c=mix(hz,texture2D(map,uv).rgb*k,smoothstep(-0.03,0.035,d.y));gl_FragColor=vec4(c,1.0);\n#include <tonemapping_fragment>\n#include <encodings_fragment>\n}",
+  side:T.BackSide,depthWrite:false,fog:false
+});
+const hdrKey=L=>'hdr:'+L.hdr+':'+(L.hdrRot||0);
+function applyHDR(o,L){
+  scene.environment=o.env;
+  const sd=o.sunDir.clone(); sd.y=clamp(sd.y,.45,.85); sd.normalize(); BB.sunDir=sd;           // light comes from where the sun actually is in the panorama
+  sunOff=[sd.x*46,sd.y*46,sd.z*46]; sun.position.set(sunOff[0],sunOff[1],sunOff[2]);
+  if(L.nodome) return;                                                                      // this map keeps its own painted sky (the panorama has things in it we don't want to see)
+  const kk=L.skyk||.85; domeMat.uniforms.map.value=o.sky; domeMat.uniforms.k.value=kk; domeMat.uniforms.hz.value.copy(o.horizon).multiplyScalar(kk);
+  skyMesh.material=domeMat; stars.visible=false;
+  scene.fog.color.copy(o.horizon).multiplyScalar(kk);                                       // distance haze matches the real horizon
+}
 BB.setLook=function(L){
   skyMat.uniforms.top.value.set(L.top); skyMat.uniforms.bot.value.set(L.bot);
   scene.environment=envFor(L);
-  if(L.hdr){ const hk='hdr:'+L.hdr; if(envCache[hk]) scene.environment=envCache[hk]; else if(!envCache['pend:'+hk]){ envCache['pend:'+hk]=1; BB.loadHDR(L.hdr,L.hdrk).then(t=>{ if(t){ envCache[hk]=t; if(BB.curLookHdr===L.hdr) scene.environment=t; } }); } BB.curLookHdr=L.hdr; } else BB.curLookHdr=null;
+  skyMesh.material=skyMat; BB.sunDir=null;
+  if(L.hdr){ const hk=hdrKey(L); if(!envCache[hk]&&!envCache['pend:'+hk]){ envCache['pend:'+hk]=1; BB.loadHDR(L.hdr,L.hdrk,L.hdrRot).then(o=>{ if(o){ envCache[hk]=o; if(BB.curLookHdr===hk) applyHDR(o,L); } }); } BB.curLookHdr=hk; } else BB.curLookHdr=null;
   hemi.color.set(L.hs); hemi.groundColor.set(L.hg); hemi.intensity=L.hi*0.36;
   sun.color.set(L.sc); sun.intensity=L.si*1.6; sun.position.set(L.sp[0],L.sp[1],L.sp[2]);
   look.ex=L.ex||1; look.bloom=L.bl===undefined?0.5:L.bl; look.tint=L.tint||[1,1,1]; look.sat=L.sat||1.08; look.vig=L.vig===undefined?0.42:L.vig;
@@ -123,6 +141,7 @@ BB.setLook=function(L){
   sunOff=[L.sp[0],L.sp[1],L.sp[2]];
   scene.fog.color.set(L.bot); scene.fog.near=L.fn; scene.fog.far=L.ff;
   stars.visible=!!L.stars;
+  if(L.hdr&&envCache[hdrKey(L)]) applyHDR(envCache[hdrKey(L)],L);   // last, so the HDR's own sun/fog win over the map defaults
 };
 BB.skyFollow=function(){ skyMesh.position.copy(camera.position); stars.position.copy(camera.position); };
 
@@ -508,7 +527,7 @@ BB.realify=function(av){
   if(!BB.char||av.real) return; const o=av.opts||{}, dv=!!o.davi;
   const m=T.SkeletonUtils.clone(BB.char.scene);
   const target=2.95*(o.hscale||(dv?1:.95+(((o.shirt||0)>>3)%9)*.014)), k=target/BB.char.h;
-  const holder=new T.Group(); holder.add(m); m.scale.setScalar(k); m.position.y=-BB.char.minY*k; av.inner.add(holder);
+  const holder=new T.Group(); holder.add(m); m.scale.setScalar(k); m.position.y=-BB.char.minY*k; m.rotation.y=Math.PI; /* the model faces -z, the game's forward is +z */ av.inner.add(holder);
   const tint=new T.Color(o.shirt||0xffffff), white=new T.Color(0xffffff);
   m.traverse(n=>{
     if(!n.isMesh&&!n.isSkinnedMesh) return;
@@ -520,10 +539,11 @@ BB.realify=function(av){
   av.bodyParts.forEach(p=>{ p.visible=false; });
   if(av.face&&!dv) av.face.visible=false;
   const mixer=new T.AnimationMixer(m), acts={};
-  ["idle","walk","run"].forEach(n=>{ const c=clipByName(n); if(c){ const a=mixer.clipAction(c); a.play(); a.enabled=true; a.setEffectiveWeight(n==="idle"?1:0); acts[n]=a; } });
+  ["idle","walk","run"].forEach(n=>{ const c=clipByName(n); if(c){ const a=mixer.clipAction(c); a.play(); a.enabled=true; a.setEffectiveWeight(n==="idle"?1:0); if(n!=="idle") a.paused=true; /* walk/run are driven by gait phase, not by the clock */ acts[n]=a; } });
   if(acts.idle) acts.idle.time=Math.random()*2;
-  av.real=holder; av.mixer=mixer; av.acts=acts; av.cur="idle"; av.model=m;
+  av.real=holder; av.mixer=mixer; av.acts=acts; av.cur="idle"; av.model=m; av.sc=target/2.95; av.an=null;
   av.rArm=m.getObjectByName("mixamorigRightArm"); av.lArm=m.getObjectByName("mixamorigLeftArm");
+  av.bn={head:m.getObjectByName("mixamorigHead"),neck:m.getObjectByName("mixamorigNeck")};
   if(dv){
     // accessories for Daviccino sit on the real body
     if(av.print){ av.print.position.set(0,1.62,.34); av.print.scale.setScalar(.8); }
@@ -534,25 +554,110 @@ BB.realify=function(av){
     if(av.face){ av.face.position.set(0,2.62,.28); av.face.visible=true; }
   }
 };
-BB.stepReal=function(av,dt,moving,fast,walk){
-  if(!av.mixer) return;
-  const want=moving>.1?(walk?"walk":"run"):"idle";
-  if(want!==av.cur&&av.acts[want]){
-    const to=av.acts[want], from=av.acts[av.cur];
-    to.reset().play(); to.setEffectiveWeight(1); if(from) from.crossFadeTo(to,.18,false); av.cur=want;
-  }
-  if(av.acts.run) av.acts.run.timeScale=fast?1.35:1;
+/* ---- gait driver ----
+   Numbers below were MEASURED from the Soldier clips (foot travel during stance, cycle lengths) and scaled to game units:
+   walk clip = 2.7 u/s, run clip = 6.9 u/s, one full stride = 2.8 / 4.7 u. The walk and run clips are phase-locked
+   (offset .105) so blending between them keeps the feet planted instead of sliding. */
+const WALK_V=2.7, RUN_V=6.9, WALK_S=2.8, RUN_S=4.7, WALK_D=1.0333, RUN_D=.7, PH_OFF=.105, LEAP_PH=.195;
+const _qa=new T.Quaternion(), _qb=new T.Quaternion(), _ay=new T.Vector3(0,1,0), _ax=new T.Vector3();
+const wrapA=d=>Math.atan2(Math.sin(d),Math.cos(d));
+const sstep=(a,b,x)=>{ x=clamp((x-a)/(b-a),0,1); return x*x*(3-2*x); };
+function anState(av){ return av.an||(av.an={ph:Math.random(),sp:0,acc:0,air:0,lean:0,bank:0,om:0,yaw:null,land:0,flinch:0,look:0,wasAir:false,step:0,dead:false,wi:1,ww:0,wr:0}); }
+BB.animReal=function(av,dt,speed,air,vy,lx,lz){
+  if(!av.mixer) return; const A=anState(av); if(A.dead) return;
+  dt=Math.min(dt,.08); const sc=av.sc||1;
+  const prev=A.sp; A.sp+=(speed-A.sp)*Math.min(1,dt*(speed>A.sp?10:6));
+  A.acc+=(((A.sp-prev)/Math.max(dt,.001))/sc-A.acc)*Math.min(1,dt*8);
+  const v=A.sp/sc;
+  /* blend weights: idle -> walk -> run by ground speed */
+  const u=sstep(WALK_V*.8,RUN_V*.9,v), t0=Math.min(1,v/(WALK_V*.85));
+  let wR=u, wW=(1-u)*t0, wI=(1-u)*(1-t0);
+  A.air+=((air?1:0)-A.air)*Math.min(1,dt*(air?14:9));
+  wR=wR*(1-A.air)+A.air; wW*=1-A.air; wI*=1-A.air;
+  /* gait phase advances with distance travelled; in the air it eases into a leaping stride */
+  const p0=A.ph;
+  if(air) A.ph=(A.ph+wrapA((LEAP_PH-A.ph)*6.2832)/6.2832*Math.min(1,dt*9)+1)%1;
+  else A.ph=(A.ph+v/(WALK_S+(RUN_S-WALK_S)*u)*dt)%1;
+  if(!air&&v>RUN_V*.5&&A.ph>=p0&&((p0<.2&&A.ph>=.2)||(p0<.7&&A.ph>=.7))) A.step=1;
+  if(A.wasAir&&!air){ A.land=1; A.step=2; } A.wasAir=air;
+  A.land=Math.max(0,A.land-dt*3.4); A.flinch=Math.max(0,A.flinch-dt*2.6);
+  A.wi=wI; A.ww=wW; A.wr=wR;
+  const ac=av.acts;
+  if(ac.walk){ ac.walk.time=A.ph*WALK_D; ac.walk.setEffectiveWeight(wW); }
+  if(ac.run){ ac.run.time=((A.ph+PH_OFF)%1)*RUN_D; ac.run.setEffectiveWeight(wR); }
+  if(ac.idle) ac.idle.setEffectiveWeight(wI);
   av.mixer.update(dt);
+  /* ---- procedural layer on top of the clips ---- */
+  const g=av.group, yawNow=g.rotation.y;
+  const om=A.yaw===null?0:wrapA(yawNow-A.yaw)/Math.max(dt,.001); A.yaw=yawNow; A.om+=(om-A.om)*Math.min(1,dt*10);
+  const sp01=Math.min(v/RUN_V,1.25);
+  const leanT=sp01*.1+clamp(A.acc*.011,-.07,.14)-(air?.04:0)-.32*A.flinch+.09*A.land;       // lean into the run, rock back when hit, fold on landing
+  const bankT=-clamp(A.om*.03*sp01,-.2,.2);                                                // bank into turns
+  const k=Math.min(1,dt*10); A.lean+=(leanT-A.lean)*k; A.bank+=(bankT-A.bank)*k;
+  av.real.rotation.x=A.lean; av.real.rotation.z=A.bank; av.real.position.y=-A.land*.2*sc;
+  /* head + neck track the nearest threat */
+  if(av.bn&&av.bn.head){
+    let want=0;
+    if(lx!==undefined&&lx!==null){ const d=wrapA(Math.atan2(lx-g.position.x,lz-g.position.z)-yawNow); if(Math.abs(d)<2.1) want=clamp(d,-1,1); }
+    A.look+=(want-A.look)*Math.min(1,dt*6);
+    if(Math.abs(A.look)>.01){ _qa.setFromAxisAngle(_ay,A.look*.55); av.bn.head.quaternion.multiply(_qa); if(av.bn.neck){ _qb.setFromAxisAngle(_ay,A.look*.3); av.bn.neck.quaternion.multiply(_qb); } }
+  }
 };
-BB.loadHDR=function(url,scale){
+BB.flinch=function(av){ if(av.mixer) anState(av).flinch=1; };
+BB.stepReal=function(av,dt,moving,fast,walk){ BB.animReal(av,dt,moving>.1?(walk?WALK_V*(av.sc||1):RUN_V*(av.sc||1)):0,false,0); };   // kept for the hub NPC
+
+/* ---- death: a short physical tumble instead of a rigid plank ----
+   the body pivots about its centre of mass, is knocked away from whatever hit it, bounces once and settles.
+   the real skeleton relaxes into the idle pose as it goes limp */
+BB.deathStart=function(av,dx,dz,power){
+  const l=Math.hypot(dx,dz)||1; dx/=l; dz/=l; const p=power||1, g=av.group, h=(av.real?1.4:1.1)*(av.sc||1);
+  av.dd={t:0,dx:dx,dz:dz,ang:0,w:3.2*p,cx:g.position.x,cz:g.position.z,cy:g.position.y+h,vx:dx*5.2*p,vz:dz*5.2*p,vy:4.4*p,h:h,th:.3,yaw:g.rotation.y,done:false,bounces:0};
+  if(av.mixer){ const A=anState(av); A.dead=true; A.wi0=A.wi; A.ww0=A.ww; A.wr0=A.wr; av.real.rotation.set(0,0,0); av.real.position.y=0; }
+};
+BB.deathStep=function(av,dt){
+  const d=av.dd; if(!d||d.done) return; dt=Math.min(dt,.04); d.t+=dt;
+  d.w+=(20*Math.sin(Math.min(d.ang,1.5708))+3)*dt; d.ang+=d.w*dt;
+  if(d.ang>=1.5708){ d.ang=1.5708; if(d.w>1.3){ d.w=-d.w*.3; d.bounces++; } else d.w=0; }
+  d.vy-=30*dt; d.cy+=d.vy*dt;
+  const floor=d.h*Math.cos(d.ang)+d.th*Math.sin(d.ang); let grounded=false;
+  if(d.cy<floor){ d.cy=floor; grounded=true; if(d.vy<-2.2) d.vy=-d.vy*.3; else d.vy=0; }
+  const f=Math.exp(-(grounded?5.5:.5)*dt); d.vx*=f; d.vz*=f; d.cx+=d.vx*dt; d.cz+=d.vz*dt;
+  const s=Math.sin(d.ang), c=Math.cos(d.ang), g=av.group;
+  _ax.set(d.dz,0,-d.dx); _qa.setFromAxisAngle(_ax,d.ang); _qb.setFromAxisAngle(_ay,d.yaw); g.quaternion.copy(_qa).multiply(_qb);
+  g.position.set(d.cx-d.dx*d.h*s,d.cy-d.h*c,d.cz-d.dz*d.h*s);
+  if(av.mixer&&d.t<.5&&av.an){
+    const A=av.an, k=Math.min(1,d.t/.28), ac=av.acts;
+    if(ac.walk) ac.walk.setEffectiveWeight((A.ww0||0)*(1-k)); if(ac.run) ac.run.setEffectiveWeight((A.wr0||0)*(1-k)); if(ac.idle) ac.idle.setEffectiveWeight((A.wi0||0)+(1-(A.wi0||0))*k);
+    av.mixer.update(dt*.35);
+  }
+  if(d.ang>=1.5708&&d.w===0&&d.vy===0&&Math.hypot(d.vx,d.vz)<.05&&d.t>.45){ d.done=true; }
+};
+BB.resetAvatar=function(av){
+  av.dd=null; if(av.an){ const A=av.an; A.dead=false; A.sp=0; A.acc=0; A.air=0; A.lean=A.bank=A.om=A.land=A.flinch=A.look=0; A.yaw=null; A.wasAir=false; A.step=0; }
+  if(av.real){ av.real.rotation.set(0,0,0); av.real.position.y=0; }
+};
+BB.loadHDR=function(url,scale,rot){
   return new Promise(res=>{
     if(!T.RGBELoader){ res(null); return; }
     try{
       new T.RGBELoader().setDataType(T.FloatType).load(url,tex=>{
-        const d=tex.image.data, k=scale||.5;
-        for(let i=0;i<d.length;i+=4){ d[i]=Math.min(5,d[i]*k); d[i+1]=Math.min(5,d[i+1]*k); d[i+2]=Math.min(5,d[i+2]*k); }
+        const img=tex.image, d=img.data, Wd=img.width, Ht=img.height, k=scale||.5, ch=tex.format===T.RGBFormat?3:4;   // three hands back RGB (3 floats/pixel) for .hdr files
+        const px=(x,y)=>(y*Wd+((x%Wd)+Wd)%Wd)*ch, lumAt=i=>.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];
+        if(rot){ const sh=Math.round((rot%1+1)%1*Wd)*ch, tmp=new Float32Array(Wd*ch); for(let y=0;y<Ht;y++){ const o=y*Wd*ch; tmp.set(d.subarray(o,o+Wd*ch)); for(let i=0;i<Wd*ch;i++) d[o+i]=tmp[(i+sh)%(Wd*ch)]; } }   // spin the panorama so one HDR can serve two maps with different sun azimuths
+        /* find the sun (brightest blob) and the horizon colour before the data is scaled down for lighting */
+        let best=0,bx=0,by=0;
+        for(let y=0;y<Ht;y++) for(let x=0;x<Wd;x++){ const l=lumAt(px(x,y)); if(l>best){ best=l; bx=x; by=y; } }
+        let sx=0,sy=0,sw=0; for(let y=Math.max(0,by-10);y<Math.min(Ht,by+11);y++) for(let x=bx-10;x<=bx+10;x++){ const l=lumAt(px(x,y)); if(l>best*.5){ sx+=x*l; sy+=y*l; sw+=l; } }
+        const cx=(sx/sw+.5)/Wd, cv=1-(sy/sw+.5)/Ht, ang=(cx-.5)*Math.PI*2, el=(cv-.5)*Math.PI;
+        const sunDir=new T.Vector3(Math.cos(el)*Math.cos(ang),Math.sin(el),Math.cos(el)*Math.sin(ang)).normalize();
+        const hz=new T.Color(0,0,0); { let n=0; for(let y=Math.floor(Ht*.47);y<Math.floor(Ht*.5);y++) for(let x=0;x<Wd;x+=4){ const i=px(x,y); hz.r+=Math.min(d[i],4); hz.g+=Math.min(d[i+1],4); hz.b+=Math.min(d[i+2],4); n++; } hz.multiplyScalar(1/n); }
+        /* the visible sky: half-float RGBA copy (row order flipped to match three's equirect lookup), bright values capped so the sun blooms but never overflows */
+        const half=new Uint16Array(Wd*Ht*4), hf=v=>T.DataUtils.toHalfFloat(v>=0&&v<60?v:(v>=60?60:0)), one=hf(1);
+        for(let y=0;y<Ht;y++){ const dst=(Ht-1-y)*Wd*4; for(let x=0;x<Wd;x++){ const i=px(x,y), o=dst+x*4; half[o]=hf(d[i]); half[o+1]=hf(d[i+1]); half[o+2]=hf(d[i+2]); half[o+3]=one; } }
+        const sky=new T.DataTexture(half,Wd,Ht,T.RGBAFormat,T.HalfFloatType); sky.magFilter=sky.minFilter=T.LinearFilter; sky.generateMipmaps=false; sky.needsUpdate=true;
+        for(let i=0;i<d.length;i++){ const v=d[i]*k; d[i]=v>5?5:v; }                 // every channel, whatever the stride
         tex.mapping=T.EquirectangularReflectionMapping; tex.needsUpdate=true;
-        const rt=pmrem.fromEquirectangular(tex); tex.dispose(); res(rt.texture);
+        const rt=pmrem.fromEquirectangular(tex); tex.dispose(); res({env:rt.texture,sky:sky,sunDir:sunDir,horizon:hz});
       },undefined,()=>res(null));
     }catch(e){ res(null); }
   });
