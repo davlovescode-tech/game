@@ -55,6 +55,8 @@ async function discover(folder,kind,max,keep){
 }
 async function discoverAll(){
   const r=await Promise.all([discover("assets/faces","img",60,true),discover("assets/sounds/start","snd"),discover("assets/sounds/death","snd"),discover("assets/sounds/random","snd"),discover("assets/sounds/daviccino","snd"),discover("assets/daviccino","img",1),discover("assets/sounds/faces","snd",60,true)]);
+  const charOK=await BB.loadCharacter("assets/models/Soldier.glb");
+  if(charOK){ runners.forEach(x=>BB.realify(x.av)); if(hub&&hub.davi) BB.realify(hub.davi); }
   FACE_URLS=r[0]; SND.start=r[1]; SND.death=r[2]; SND.random=r[3]; SND.davi=r[4]; DAVI_URL=r[5][0]||null; FACE_SND=r[6];
 }
 function cropToCanvas(img,size){
@@ -221,6 +223,7 @@ function poseRunner(r,dt){
   let d=r.yaw-a.group.rotation.y; d=Math.atan2(Math.sin(d),Math.cos(d)); a.group.rotation.y+=d*Math.min(1,dt*12);
   const sw=Math.sin(time*11)*.9*r.moving*(r.y>.05?.3:1);
   a.legL.rotation.x=sw; a.legR.rotation.x=-sw; a.armL.rotation.x=-sw; a.armR.rotation.x=sw;
+  if(a.mixer) BB.stepReal(a,dt,r.moving,r.juiceT>0||hyperT>0,state==='lobby'||state==='title');
   a.shield.visible=r.shield>0; if(r.shield>0) a.shield.scale.setScalar(1+Math.sin(time*6)*.05);
 }
 /* remote players (and everything on a guest's screen) just follow the last network position */

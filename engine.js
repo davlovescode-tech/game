@@ -115,6 +115,7 @@ function envFor(L){
 BB.setLook=function(L){
   skyMat.uniforms.top.value.set(L.top); skyMat.uniforms.bot.value.set(L.bot);
   scene.environment=envFor(L);
+  if(L.hdr){ const hk='hdr:'+L.hdr; if(envCache[hk]) scene.environment=envCache[hk]; else if(!envCache['pend:'+hk]){ envCache['pend:'+hk]=1; BB.loadHDR(L.hdr,L.hdrk).then(t=>{ if(t){ envCache[hk]=t; if(BB.curLookHdr===L.hdr) scene.environment=t; } }); } BB.curLookHdr=L.hdr; } else BB.curLookHdr=null;
   hemi.color.set(L.hs); hemi.groundColor.set(L.hg); hemi.intensity=L.hi*0.36;
   sun.color.set(L.sc); sun.intensity=L.si*1.6; sun.position.set(L.sp[0],L.sp[1],L.sp[2]);
   look.ex=L.ex||1; look.bloom=L.bl===undefined?0.5:L.bl; look.tint=L.tint||[1,1,1]; look.sat=L.sat||1.08; look.vig=L.vig===undefined?0.42:L.vig;
@@ -487,6 +488,76 @@ const SHOES=[0xff3df0,0x27e6ff,0xffe066,0x3ddc84,0xffffff,0xff8a1f];
 const SKINS=[0xf1c27d,0xe0ac69,0xc68642,0x8d5524,0xffdbac];
 const HAIRS=[0x111111,0x2b1b12,0x3a2a1a,0x6b3a1a,0x1a1a40];
 
+
+/* ---------- realistic characters: a real skinned, animated human model (loaded from assets/models) ---------- */
+BB.char=null;
+BB.loadCharacter=function(url){
+  return new Promise(res=>{
+    if(!T.GLTFLoader||!T.SkeletonUtils){ res(false); return; }
+    try{
+      new T.GLTFLoader().load(url,g=>{
+        const box=new T.Box3().setFromObject(g.scene), h=Math.max(.01,box.max.y-box.min.y);
+        BB.char={scene:g.scene,clips:g.animations,h:h,minY:box.min.y};
+        res(true);
+      },undefined,()=>res(false));
+    }catch(e){ res(false); }
+  });
+};
+function clipByName(name){ const c=BB.char.clips; return c.find(x=>x.name.toLowerCase()===name)||c.find(x=>x.name.toLowerCase().indexOf(name)>=0); }
+BB.realify=function(av){
+  if(!BB.char||av.real) return; const o=av.opts||{}, dv=!!o.davi;
+  const m=T.SkeletonUtils.clone(BB.char.scene);
+  const target=2.95*(o.hscale||(dv?1:.95+(((o.shirt||0)>>3)%9)*.014)), k=target/BB.char.h;
+  const holder=new T.Group(); holder.add(m); m.scale.setScalar(k); m.position.y=-BB.char.minY*k; av.inner.add(holder);
+  const tint=new T.Color(o.shirt||0xffffff), white=new T.Color(0xffffff);
+  m.traverse(n=>{
+    if(!n.isMesh&&!n.isSkinnedMesh) return;
+    n.castShadow=true; n.receiveShadow=true; n.frustumCulled=false;
+    const mats=Array.isArray(n.material)?n.material:[n.material];
+    const cl=mats.map(mm=>{ const c=mm.clone(); c.envMapIntensity=1.1; if(c.map) c.map.anisotropy=maxAniso; if(dv){ c.color.copy(tint).lerp(white,.25); } else c.color.copy(white).lerp(tint,.82); c.roughness=Math.max(.5,c.roughness||0); c.metalness=0; return c; });
+    n.material=Array.isArray(n.material)?cl:cl[0];
+  });
+  av.bodyParts.forEach(p=>{ p.visible=false; });
+  if(av.face&&!dv) av.face.visible=false;
+  const mixer=new T.AnimationMixer(m), acts={};
+  ["idle","walk","run"].forEach(n=>{ const c=clipByName(n); if(c){ const a=mixer.clipAction(c); a.play(); a.enabled=true; a.setEffectiveWeight(n==="idle"?1:0); acts[n]=a; } });
+  if(acts.idle) acts.idle.time=Math.random()*2;
+  av.real=holder; av.mixer=mixer; av.acts=acts; av.cur="idle"; av.model=m;
+  av.rArm=m.getObjectByName("mixamorigRightArm"); av.lArm=m.getObjectByName("mixamorigLeftArm");
+  if(dv){
+    // accessories for Daviccino sit on the real body
+    if(av.print){ av.print.position.set(0,1.62,.34); av.print.scale.setScalar(.8); }
+    if(av.key){ av.key.position.set(.42,1.2,.22); }
+    const hide=n=>{ if(n) n.visible=false; };
+    av.inner.children.forEach(ch=>{ if(ch.geometry&&ch.geometry.type==="TorusGeometry"&&ch.position.y>1.6&&ch.position.y<1.8) hide(ch); });
+    if(av.cape){ av.cape.position.set(0,1.75,-.32); }
+    if(av.face){ av.face.position.set(0,2.62,.28); av.face.visible=true; }
+  }
+};
+BB.stepReal=function(av,dt,moving,fast,walk){
+  if(!av.mixer) return;
+  const want=moving>.1?(walk?"walk":"run"):"idle";
+  if(want!==av.cur&&av.acts[want]){
+    const to=av.acts[want], from=av.acts[av.cur];
+    to.reset().play(); to.setEffectiveWeight(1); if(from) from.crossFadeTo(to,.18,false); av.cur=want;
+  }
+  if(av.acts.run) av.acts.run.timeScale=fast?1.35:1;
+  av.mixer.update(dt);
+};
+BB.loadHDR=function(url,scale){
+  return new Promise(res=>{
+    if(!T.RGBELoader){ res(null); return; }
+    try{
+      new T.RGBELoader().setDataType(T.FloatType).load(url,tex=>{
+        const d=tex.image.data, k=scale||.5;
+        for(let i=0;i<d.length;i+=4){ d[i]=Math.min(5,d[i]*k); d[i+1]=Math.min(5,d[i+1]*k); d[i+2]=Math.min(5,d[i+2]*k); }
+        tex.mapping=T.EquirectangularReflectionMapping; tex.needsUpdate=true;
+        const rt=pmrem.fromEquirectangular(tex); tex.dispose(); res(rt.texture);
+      },undefined,()=>res(null));
+    }catch(e){ res(null); }
+  });
+};
+
 BB.makeAvatar=function(o){
   const g=new T.Group(), inner=new T.Group(); g.add(inner);
   const dv=!!o.davi, skinC=o.skin||SKINS[0];
@@ -551,6 +622,7 @@ BB.makeAvatar=function(o){
   if(o.hat==="chef"){ mk(inner,CY(.34,.38,.4,16),M(0xffffff,{r:.8}),0,2.86,0); mk(inner,SP(.42,16,10),M(0xffffff,{r:.8}),0,3.1,0); }
   if(o.hat==="turban"){ const tb=mk(inner,SP(.58,20,14),M(o.hatColor||0x2e9e4a,{r:.7,nmap:clothN,ns:.8}),0,2.55,0); tb.scale.y=.62; }
   if(o.shades||dv){ mk(inner,BX(.72,.15,.1),M(0x07070f,{r:.1,m:.8,env:1.6}),0,2.36,.49,{cast:false}); }
+  out.bodyParts=inner.children.slice();
   // label
   const lab=BB.labelSprite(o.name||"",o.isYou?"#ffd23f":"#ffffff",o.sub); lab.position.set(0,o.sub?3.95:3.55,0); inner.add(lab); out.label=lab;
   // shield bubble
@@ -575,7 +647,8 @@ BB.makeAvatar=function(o){
     armL.rotation.z=-.18;
   }
   inner.scale.setScalar(o.scale||0.75);
-  out.legL=legL; out.legR=legR; out.armL=armL; out.armR=armR; out.head=head;
+  out.legL=legL; out.legR=legR; out.armL=armL; out.armR=armR; out.head=head; out.opts=o; out.inner=inner;
+  if(BB.char) BB.realify(out);
   return out;
 };
 BB.randomLook=function(i){

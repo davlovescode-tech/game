@@ -243,6 +243,7 @@ W.buildHub=function(){
     davi.halo.rotation.z+=dt*1.5; davi.halo.position.y=3.05+Math.sin(t*3)*.06;
     davi.key.rotation.z=Math.sin(t*3)*.45; davi.cape.rotation.x=-.12+Math.sin(t*2.2)*.08; davi.cape.scale.y=1+Math.sin(t*3)*.03;
     davi.armR.rotation.z=2.55+Math.sin(t*5)*.22; davi.armR.rotation.x=0;
+    if(davi.mixer){ BB.stepReal(davi,dt,0,false,true); if(davi.rArm){ davi.rArm.rotation.z=(davi.rArm.userData.z0===undefined?(davi.rArm.userData.z0=davi.rArm.rotation.z):davi.rArm.userData.z0)-1.9+Math.sin(t*5)*.25; } }
     davi.group.rotation.y=Math.sin(t*.6)*.35;
     orb.forEach((s,i)=>{ const a=t*.9+i/6*PI*2; s.position.set(Math.cos(a)*2.9,3.2+Math.sin(t*2+i)*.5,Math.sin(a)*2.9); });
     hub.vendors.forEach(v=>{ const a=v.av; a.armR.rotation.x=-.9+Math.sin(t*6+v.ph)*.55; a.armL.rotation.x=-.5+Math.cos(t*5+v.ph)*.4; a.inner.position.y=Math.abs(Math.sin(t*3+v.ph))*.04; });
@@ -288,7 +289,7 @@ function buildBazaar(){
   const bl=[]; [-28,-14,0,14,28].forEach(z=>string(bl,[-H-3,9,z],[H+3,9,z],1.8,40)); [-28,-14,14,28].forEach(x=>string(bl,[x,9,-H-3],[x,9,H+3],1.8,40)); bulbs(g,bl);
   const lan=[]; for(let i=0;i<50;i++) lan.push({x:rnd(-H,H),y:rnd(5.5,8),z:rnd(-H,H),s:rnd(.3,.5),color:pick([0xff8a1f,0xff3d7a,0xffd23f])});
   instanced(g,SP(1,8,6),new T.MeshBasicMaterial({color:0xffffff,fog:false}),lan,false);
-  return {group:g,obs:obs,name:"Gali Bazaar",key:"bazaar",look:{top:0x5a3b9c,bot:0xffb27a,hs:0xffd9b0,hg:0x6a4a3a,hi:.75,sc:0xffc58a,si:1.3,sp:[-26,22,18],fn:48,ff:135,stars:false,ex:.82,bl:.4,tint:[1.04,1,.94],sat:1.12}};
+  return {group:g,obs:obs,name:"Gali Bazaar",key:"bazaar",look:{top:0x5a3b9c,bot:0xffb27a,hs:0xffd9b0,hg:0x6a4a3a,hi:.75,sc:0xffc58a,si:1.3,sp:[-26,22,18],fn:48,ff:135,stars:false,hdr:'assets/env/venice_sunset_1k.hdr',hdrk:.6,ex:.82,bl:.4,tint:[1.04,1,.94],sat:1.12}};
 }
 
 /* ---- 2. Disco Dandiya (neon night) ---- */
@@ -374,7 +375,7 @@ function buildClass(){
   instanced(g,BX(1,1,1),new T.MeshStandardMaterial({color:0xffffff,roughness:.7}),books,false); obs.push({x:-H+1,z:-14,r:2});
   const planes=[]; for(let i=0;i<10;i++){ const m=mk(g,new T.ConeGeometry(.2,.9,3),B(pick([0xffffff,0xffe066,0x9ff3ff])),0,0,0,{rx:PI/2,glow:true}); planes.push({m:m,a:Math.random()*6.28,r:rnd(6,34),y:rnd(3.5,7),sp:rnd(.15,.35)*(Math.random()<.5?-1:1)}); }
   let dust=0;
-  return {group:g,obs:obs,name:"Last Bench Classroom",key:"classroom",look:{top:0x6cb8ff,bot:0xe6f6ff,hs:0xffffff,hg:0xb89868,hi:.9,sc:0xfff0d0,si:1.15,sp:[-25,36,10],fn:80,ff:190,stars:false,ex:.68,bl:.3,tint:[1.02,1,.97]},
+  return {group:g,obs:obs,name:"Last Bench Classroom",key:"classroom",look:{top:0x6cb8ff,bot:0xe6f6ff,hs:0xffffff,hg:0xb89868,hi:.9,sc:0xfff0d0,si:1.15,sp:[-25,36,10],fn:80,ff:190,stars:false,hdr:'assets/env/pedestrian_overpass_1k.hdr',hdrk:.5,ex:.68,bl:.3,tint:[1.02,1,.97]},
     tick(t,dt){ planes.forEach(p=>{ p.a+=p.sp*dt; p.m.position.set(Math.cos(p.a)*p.r,p.y+Math.sin(t+p.r)*.5,Math.sin(p.a)*p.r); p.m.rotation.y=-p.a+(p.sp>0?PI:0); });
       dust-=dt; if(dust<=0){ dust=.25; emit(rnd(-H,H),rnd(2,8),rnd(-H,H),2,0xfff4cc,.25,2.2,-.05,.2); } }};
 }
@@ -413,7 +414,7 @@ function buildTaj(){
   scatter(20,7,4,H,(x,z)=>Math.abs(x)<9||z<-H+14,placed).forEach(p=>{ mk(g,CY(.25,.3,1,6),M(0x4a2f1a),p.x,.5,p.z); [[2.1,1.55,2.6],[3.5,1.25,2.4],[4.8,.9,2.2]].forEach(([y,r,hh])=>mk(g,CY(0,r,hh,12),pineM,p.x,y,p.z)); obs.push({x:p.x,z:p.z,r:1.1}); });
   const fz=poolC; mk(g,CY(1.7,1.9,.6,20),M(0xf4efe4,{r:.3}),0,.3,fz); mk(g,CY(.3,.4,2.2,10),M(0xf4efe4,{r:.3}),0,1.6,fz); mk(g,SP(.7,12,8),M(0xf4efe4,{r:.3}),0,2.8,fz); obs.push({x:0,z:fz,r:1.9});
   let sp=0;
-  return {group:g,obs:obs,name:"Taj Garden",key:"taj",look:{top:0x4e6fd6,bot:0xffc9b0,hs:0xfff0e0,hg:0x6a8a5a,hi:.8,sc:0xffd9aa,si:1.2,sp:[34,22,-14],fn:55,ff:150,stars:false,ex:.72,bl:.35,tint:[1.03,1,.95],sat:1.1},
+  return {group:g,obs:obs,name:"Taj Garden",key:"taj",look:{top:0x4e6fd6,bot:0xffc9b0,hs:0xfff0e0,hg:0x6a8a5a,hi:.8,sc:0xffd9aa,si:1.2,sp:[34,22,-14],fn:55,ff:150,stars:false,hdr:'assets/env/royal_esplanade_1k.hdr',hdrk:.55,ex:.72,bl:.35,tint:[1.03,1,.95],sat:1.1},
     tick(t,dt){ wn.nmap.offset.set(t*.012,-t*.03); wn.rmap.offset.copy(wn.nmap.offset); water.emissiveIntensity=.14+Math.sin(t*1.5)*.04; sp-=dt; if(sp<=0){ sp=.06; emit(0,2.9,fz,3,0xbfe6ff,1.4,1.2,7,4.5); } }};
 }
 

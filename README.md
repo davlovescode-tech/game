@@ -51,3 +51,9 @@ Repo **Settings > Pages**: Source = *Deploy from a branch*, Branch = `main`, fol
 - Every floor, wall and cloth is a procedural PBR material (albedo + normal + roughness) generated in code, so there are no big texture files to download.
 - three.js is bundled in `lib/` (no CDN needed; the CDN is only a fallback). Debug switches: `?post=0` (no post-processing), `?msaa=0`.
 - Admin extras: `/cam yaw pitch dist`, `/pos x z`, `/go` (skip results screen).
+
+
+## Realistic characters and skies
+- Players are a real skinned 3D human model (`assets/models/Soldier.glb`, a Mixamo character from the three.js examples) with idle / walk / run animations, tinted per player. If the file fails to load, the game falls back to the older stylised characters automatically.
+- Daylight maps use real HDR sky lighting from `assets/env/` (three.js example HDRIs).
+- Credit: Soldier model and animations from Mixamo (via three.js examples, MIT-licensed repo); HDRIs from Poly Haven via three.js examples (CC0).
