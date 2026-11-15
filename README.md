@@ -59,3 +59,9 @@ Repo **Settings > Pages**: Source = *Deploy from a branch*, Branch = `main`, fol
 - Daylight maps use real HDR skies from `assets/env/` (three.js example HDRIs): the sky you see, the lighting, the reflections and the sun direction (shadows, light shafts) all come from the same panorama, and distance haze takes the horizon's colour.
 - Taj Garden's lawn uses a photographic grass texture (`assets/textures/grass.jpg` + `grass_n.jpg`, resized).
 - Credit: Soldier model and animations from Mixamo (via three.js examples, MIT-licensed repo); HDRIs from Poly Haven via three.js examples (CC0); grass texture from OpenGameArt ("Dark Grass" / "Backgrounds for top-down games"), licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/), slightly modified by resizing.
+
+## Sound, game feel and sharing
+
+- **Soundscape** (all synthesised in the browser, no files to add): a looping ambience for every map (crowd, bells and hawkers in the bazaar, wind and birds in the garden, a wall clock in the classroom, a beat on the disco floor), footsteps that change with the floor, and a low warning rumble that rises and pans toward the nearest square as it closes in. Your own `assets/sounds` files still play on top, exactly as before. The 🔊 button in the HUD mutes everything (remembered per device).
+- **Game feel:** a short camera shake and a beat of slow motion when you are caught (slow motion is solo-only so it can never slow other players), the camera stays on your body for a moment before it follows someone else, and a "CLOSE CALL" popup when a square just misses you.
+- **Shareable death card:** after you are caught a 📸 Share button appears. It builds a 1080x1920 story-sized card (a picture of that moment, your death message, your points, the map, the link and the @handle) and opens the phone's share sheet, or saves a PNG on desktop. Admin console: `/card` opens it for testing.

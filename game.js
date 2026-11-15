@@ -24,17 +24,91 @@ $("instaTxt").textContent="@"+CFG.insta; $("instaTopTxt").textContent="@"+CFG.in
 /* ---------- audio + asset discovery ---------- */
 let actx=null;
 function synth(f,d,type,v,slideTo){
+  if(!AUD.on) return;
   try{
     actx=actx||new (window.AudioContext||window.webkitAudioContext)();
     const o=actx.createOscillator(), g=actx.createGain();
     o.type=type||"square"; o.frequency.value=f; if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo,actx.currentTime+d);
-    g.gain.value=v||0.08; o.connect(g); g.connect(actx.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d); o.stop(actx.currentTime+d);
+    g.gain.value=v||0.08; o.connect(g); g.connect(AUD.master||actx.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d); o.stop(actx.currentTime+d);
   }catch(e){}
 }
 function playFrom(list){
   if(!list||!list.length) return false;
+  if(!AUD.on) return true;
   try{ const a=new Audio(pick(list)); a.volume=0.9; const p=a.play(); if(p&&p.catch) p.catch(()=>{}); return true; }catch(e){ return false; }
 }
+
+/* ---------- soundscape ----------
+   Everything below is synthesised with WebAudio, so there are no sound files to add or load:
+   a looping ambience per map, footsteps that change with the floor, a low "something is close" warning that
+   pans toward the nearest square, and small effects. The speaker button in the HUD mutes it (remembered). */
+const AUD={on:true,master:null,noise:null,bus:null,nodes:[],cur:"__",ev:null,warn:null};
+try{ AUD.on=localStorage.getItem("bb3d-snd")!=="0"; }catch(e){}
+function audInit(){
+  if(AUD.master) return true;
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==="suspended"&&actx.resume) actx.resume();
+    AUD.master=actx.createGain(); AUD.master.gain.value=AUD.on?1:0; AUD.master.connect(actx.destination);
+    const n=actx.sampleRate*2, buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=Math.random()*2-1; AUD.noise=buf;
+    const o=actx.createOscillator(), f=actx.createBiquadFilter(), g=actx.createGain(); o.type="sawtooth"; o.frequency.value=60; f.type="lowpass"; f.frequency.value=260; g.gain.value=0; o.connect(f); f.connect(g);
+    let pn=null; if(actx.createStereoPanner){ pn=actx.createStereoPanner(); g.connect(pn); pn.connect(AUD.master); } else g.connect(AUD.master);
+    o.start(); AUD.warn={o:o,g:g,p:pn};
+    return true;
+  }catch(e){ return false; }
+}
+function aTone(t,f,d,type,v,to,dest){ const c=actx, o=c.createOscillator(), g=c.createGain(); o.type=type||"sine"; o.frequency.setValueAtTime(f,t); if(to) o.frequency.exponentialRampToValueAtTime(to,t+d); g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(.0001,t+d); o.connect(g); g.connect(dest||AUD.bus||AUD.master); o.start(t); o.stop(t+d+.02); }
+function aNoise(t,d,type,f,q,v,dest){ const c=actx, s=c.createBufferSource(), fl=c.createBiquadFilter(), g=c.createGain(); s.buffer=AUD.noise; fl.type=type; fl.frequency.value=f; fl.Q.value=q||1; g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(.0001,t+d); s.connect(fl); fl.connect(g); g.connect(dest||AUD.bus||AUD.master); s.start(t,Math.random()*1.5,d+.05); }
+function nLoop(bus,type,freq,q,gain,lfoHz,lfoDepth){
+  const c=actx, s=c.createBufferSource(); s.buffer=AUD.noise; s.loop=true;
+  const f=c.createBiquadFilter(); f.type=type; f.frequency.value=freq; f.Q.value=q; const g=c.createGain(); g.gain.value=gain;
+  s.connect(f); f.connect(g); g.connect(bus); s.start(0,Math.random()*1.5); AUD.nodes.push(s);
+  if(lfoHz){ const l=c.createOscillator(), lg=c.createGain(); l.frequency.value=lfoHz; lg.gain.value=gain*lfoDepth; l.connect(lg); lg.connect(g.gain); l.start(); AUD.nodes.push(l); }
+}
+const AMB={
+  hub(bus){ nLoop(bus,"bandpass",420,.5,.035,.11,.5); nLoop(bus,"lowpass",160,.6,.03,0,0); let nx=0;
+    return t=>{ if(t<nx) return; nx=t+rnd(5,10); aTone(t,110,.22,"sine",.05,60); aTone(t+.28,110,.22,"sine",.04,60); }; },                                   // distant dhol
+  bazaar(bus){ nLoop(bus,"bandpass",520,.6,.05,.13,.5); nLoop(bus,"lowpass",200,.5,.035,0,0); let nx=0;
+    return t=>{ if(t<nx) return; nx=t+rnd(2.5,6); const k=Math.random();
+      if(k<.4){ aTone(t,1760,1,"sine",.025); aTone(t,2637,.7,"sine",.012); }                                                                                  // cycle bell
+      else if(k<.8){ const f=rnd(190,260); aTone(t,f,.3,"sawtooth",.011,f*.8); aTone(t+.34,f*1.1,.3,"sawtooth",.011,f*.85); }                                  // a hawker calling
+      else { aTone(t,420,.2,"square",.009,360); aTone(t+.3,420,.2,"square",.009,360); } }; },                                                                  // far-off scooter horn
+  taj(bus){ nLoop(bus,"bandpass",650,.35,.04,.06,.9); nLoop(bus,"highpass",5000,.5,.004,.2,.5); let nx=0;
+    return t=>{ if(t<nx) return; nx=t+rnd(1.2,4); const f=rnd(2800,4200), n=Math.floor(rnd(2,5)); for(let i=0;i<n;i++) aTone(t+i*.09,f*(1+i*.04),.07,"sine",.014,f*1.35); }; },   // birds
+  classroom(bus){ nLoop(bus,"lowpass",130,.6,.035,0,0); nLoop(bus,"bandpass",950,.9,.014,.2,.6); let nx=0,n2=0,k=0;
+    return t=>{ while(nx<t+.12){ if(nx<t) nx=t; k^=1; aNoise(nx,.025,"highpass",k?3200:2400,.8,.03); nx+=1; } if(t>=n2){ n2=t+rnd(6,12); aNoise(t,.35,"bandpass",600,2,.02); } }; },   // wall clock + a chair scrape
+  disco(bus){ nLoop(bus,"lowpass",90,.7,.02,0,0); let nb=0,step=0; const bl=60/124/2;
+    return t=>{ if(nb<t-.3) nb=t; while(nb<t+.12){ const q=step%8; if(q%2===0) aTone(nb,150,.2,"sine",.1,42); else aNoise(nb,.05,"highpass",8000,.7,.025); if(q===0||q===3||q===6) aTone(nb,55,.3,"sawtooth",.04,50); nb+=bl; step++; } }; }
+};
+function audSwitch(want){
+  AUD.cur=want; const c=actx;
+  if(AUD.bus){ const old=AUD.bus, nodes=AUD.nodes; old.gain.setTargetAtTime(0,c.currentTime,.4); setTimeout(()=>{ nodes.forEach(n=>{ try{ n.stop(); }catch(e){} }); try{ old.disconnect(); }catch(e){} },2400); }
+  AUD.nodes=[]; AUD.ev=null; AUD.bus=null;
+  if(!want||!AMB[want]) return;
+  const bus=c.createGain(); bus.gain.value=0; bus.connect(AUD.master); bus.gain.setTargetAtTime(1,c.currentTime,.9); AUD.bus=bus; AUD.ev=AMB[want](bus);
+}
+function audTick(dt){
+  if(state==="title"||!AUD.on||!audInit()) return;
+  if(actx.state==="suspended"&&!document.hidden&&actx.resume) actx.resume();
+  const want=env===hub?"hub":(env&&env.key)||null;
+  if(want!==AUD.cur) audSwitch(want);
+  if(AUD.ev) AUD.ev(actx.currentTime);
+  const w=AUD.warn; if(!w) return; let inten=0,pan=0;
+  if(state==="play"&&grace<=0&&player&&player.alive){
+    let bd=1e9,bc_=null; for(const c of chasers){ const d=Math.hypot(player.x-c.x,player.z-c.z); if(d<bd){ bd=d; bc_=c; } }
+    if(bc_&&bd<13){ inten=Math.pow(clamp((13-bd)/(13-SQ_HIT-1),0,1),1.6)*(freezeT>0?.2:1); const vx=(bc_.x-player.x)/bd, vz=(bc_.z-player.z)/bd; pan=clamp(vx*Math.cos(camYaw)-vz*Math.sin(camYaw),-1,1)*.8; }
+  }
+  const t=actx.currentTime; w.g.gain.setTargetAtTime(inten*.1,t,.08); w.o.frequency.setTargetAtTime(55+inten*80,t,.1); if(w.p) w.p.pan.setTargetAtTime(pan,t,.1);
+}
+BB.aud=AUD;   // exposed for diagnostics
+let stepGate=0;
+function stepSnd(land,vol){
+  if(!AUD.on||vol<=.02||!audInit()) return; const c=actx, t=c.currentTime; if(t<stepGate) return; stepGate=t+.045;
+  const k=(env===hub?"hub":env&&env.key)||"hub", cfg={bazaar:["bandpass",1900,.07],taj:["lowpass",800,.1],classroom:["bandpass",650,.06],disco:["bandpass",1300,.05],hub:["bandpass",1500,.06]}[k]||["bandpass",1300,.06];
+  const v=(land?.16:.07)*vol;
+  aNoise(t,cfg[2]*(land?1.8:1),cfg[0],cfg[1]*rnd(.85,1.15),1.1,v,AUD.master); aTone(t,land?75:105+rnd(0,25),.07,"sine",v*.9,45,AUD.master);
+}
+function boomSnd(delay){ if(!AUD.on||state==="title"||!audInit()) return; const t=actx.currentTime+(delay||0); aNoise(t,.5,"lowpass",300,.8,.05,AUD.master); aTone(t,70,.4,"sine",.06,35,AUD.master); }
+document.addEventListener("visibilitychange",()=>{ if(actx&&AUD.master){ try{ if(document.hidden) actx.suspend(); else actx.resume(); }catch(e){} } });
 const IMG_EXT=["jpg","jpeg","png","webp","gif"], SND_EXT=["mp3","ogg","wav","m4a"];
 let FACE_URLS=[], FACE_SND=[], DAVI_URL=null, SND={start:[],death:[],random:[],davi:[]};
 function loadImg(src){ return new Promise(res=>{ const im=new Image(); im.crossOrigin="anonymous"; im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; }); }
@@ -234,7 +308,7 @@ function poseRunner(r,dt){
       const near=Math.hypot(r.x-camX,r.z-camZ)<34;
       if(near){ const fx=r.x-Math.sin(r.yaw)*.25, fz=r.z-Math.cos(r.yaw)*.25;
         if(A.step===2){ emit(fx,.15,fz,7,0x7a6a58,1.7,.6,.4,.5); } else emit(fx,.12,fz,2,0x6e6050,.9,.5,.2,.35); }
-      if(r.isPlayer&&state!=="title"){ synth(A.step===2?70:95+Math.random()*25,.07,"sine",A.step===2?.05:.025,45); }
+      if(state!=="title") stepSnd(A.step===2,r.isPlayer?1:Math.max(0,1-Math.hypot(r.x-camX,r.z-camZ)/14)*.5);
       A.step=0;
     }
   } else {
@@ -336,7 +410,7 @@ function ghostChasers(dt){
   chasers.forEach(c=>{ c.x+=(c.tx-c.x)*k; c.z+=(c.tz-c.z)*k; poseChaser(c,nearestAlive(c.x,c.z),freezeT>0); });
 }
 function shieldBreak(r){
-  BB.flinch(r.av);
+  BB.flinch(r.av); if(r.isPlayer) kickShake(.3,.3);
   emit(r.x,1.5,r.z,40,0x4de1ff,7,.9,3,2); feed(r.name+"'s shield broke 🛡️");
   if(r.isPlayer){ daviSay(HER?"Not today. ✨":"Shield saved you. You're welcome 😎"); synth(880,.15,"triangle",.08,440); }
 }
@@ -408,7 +482,7 @@ function startRound(sp){
   state="play"; timer=CFG.roundSeconds; roundT=0; grace=2.6; evT=rnd(8,12); freezeT=gravT=hyperT=0;
   placeRunners("arena");
   if(sp) runners.forEach(r=>{ const q=sp[r.id]; if(q){ r.x=q[0]; r.z=q[1]; r.yaw=q[2]; r.av.group.position.set(r.x,0,r.z); r.av.group.rotation.y=r.yaw; } });
-  runners.forEach(r=>{ r.pts=0; r.shield=0; r.invuln=0; r.juiceT=0; r.bonus=0; });
+  runners.forEach(r=>{ r.pts=0; r.shield=0; r.invuln=0; r.juiceT=0; r.bonus=0; r.deadT=0; }); hideShare();
   if(isHost()) runners.forEach(r=>{ if(r.remote&&r.buff){ r.juiceT=r.buff.juice?14:0; r.shield=r.buff.shield?1:0; r.bonus=r.buff.bless?5:0; r.buff=null; } });
   if(player){ player.juiceT=buff.juice?14:0; player.shield=buff.shield?1:0; player.bonus=buff.bless?5:0; }
   buff={juice:false,shield:false,bless:false};
@@ -425,12 +499,13 @@ function kill(r,c,over,fromNet){
   r.alive=false; r.pts=fromNet?over.pts:Math.floor(roundT);
   { const g=r.av.group, hit=c&&c.x!==undefined; BB.deathStart(r.av,hit?r.x-c.x:-Math.sin(g.rotation.y),hit?r.z-c.z:-Math.cos(g.rotation.y),1);   // knocked away from the square that touched it
     r.av.legL.rotation.x=r.av.legR.rotation.x=0; r.av.shield.visible=false; }
+  if(r.isPlayer){ r.deadT=0; kickShake(.7,.6); if(!isHost()&&!isGuest()) hitSlowT=.55; }
   const msg=(r.isPlayer&&HER)?pick(SOFT):(fromNet?over.msg:nextMsg());
   if(!fromNet) bc({t:"k",id:r.id,msg:msg,pts:r.pts,ci:c?c.idx:-1});
   feed(r.name+": "+msg); BB.bubble(r.x,3.6,r.z,msg,"#ff4d6d");
   emit(r.x,1.5,r.z,45,0xff4d6d,7,1,8,3); emit(r.x,1.8,r.z,18,0xffe066,5,1.2,6,3);
   const hasOwn=c&&FACE_SND[c.idx];
-  if(r.isPlayer) showDeath(msg,r.pts);
+  if(r.isPlayer){ showDeath(msg,r.pts); lastDeath={msg:msg,pts:r.pts,map:curMap?curMap.name:"",round:results.length+1,name:r.name}; snapAt=performance.now()+800; if(AUD.on&&audInit()) aTone(actx.currentTime+.28,62,.3,"sine",.13,34,AUD.master); }
   if(c&&(hasOwn||!r.isPlayer||!SND.death.length)) squareSound(c.idx);   // the square that got you plays ITS sound
   else if(r.isPlayer&&!playFrom(SND.death)) synth(300,.45,"sawtooth",.12,70);
 }
@@ -532,14 +607,68 @@ let fwT=1.5;
 function fireworks(dt){
   fwT-=dt; if(fwT>0) return; fwT=rnd(1.4,3);
   const x=rnd(-24,24), y=rnd(18,28), z=rnd(-24,24), c=pick([0xff3df0,0x27e6ff,0xffe066,0xff8a1f,0x3ddc84,0xffffff]);
-  emit(x,y,z,70,c,11,1.7,4,0); setTimeout(()=>emit(x,y,z,30,0xffffff,5,1.3,3,0),180);
+  emit(x,y,z,70,c,11,1.7,4,0); boomSnd(.25); setTimeout(()=>emit(x,y,z,30,0xffffff,5,1.3,3,0),180);
 }
 
 /* ---------- main loop ---------- */
 let last=performance.now(), slow=0, uiAcc=0, lastChips="", hintT=0;
+/* ---------- game feel: shake, close calls ---------- */
+let shakeT=0,shakeA=0,shakeD=.5,hitSlowT=0,nearT=0;
+function kickShake(a,d){ shakeA=a; shakeD=d; shakeT=d; }
+function popText(txt){ const e=$("pop"); e.textContent=txt; e.classList.remove("on"); void e.offsetWidth; e.classList.add("on"); }
+function nearMiss(){ popText(pick(["CLOSE CALL 😮‍💨","WHOOSH! 😳","ITNA PAAS! 😱","PHEW 😮‍💨"])); if(AUD.on&&audInit()){ const t=actx.currentTime; aNoise(t,.35,"bandpass",1800,3,.09,AUD.master); aTone(t,900,.3,"sine",.03,300,AUD.master); } }
+
+/* ---------- shareable death card ----------
+   When you get caught the game keeps a picture of that moment; the Share button builds a 1080x1920 story-sized card
+   (picture, your death message, points, map, link, @handle) you can post or save. Shown on phones via the native share sheet. */
+let snapC=null,snapAt=0,lastDeath=null,cardCv=null;
+function grabSnap(){
+  try{ const cv=BB.renderer.domElement, tw=960, th=Math.max(1,Math.round(960*cv.height/cv.width)), o=document.createElement("canvas"); o.width=tw; o.height=th; o.getContext("2d").drawImage(cv,0,0,tw,th); snapC=o; }catch(e){ snapC=null; }
+  if(lastDeath) $("shareBtn").style.display="inline-block";
+}
+function hideShare(){ $("shareBtn").style.display="none"; $("card").style.display="none"; snapAt=0; }
+function rrect(g,x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
+function fitSize(g,txt,wt,fam,size,maxW){ for(;size>20;size-=4){ g.font=wt+" "+size+"px "+fam; if(g.measureText(txt).width<=maxW) break; } return size; }
+function wrapLines(g,txt,maxW){ const out=[]; let cur=""; for(const w of txt.split(" ")){ const t=cur?cur+" "+w:w; if(g.measureText(t).width>maxW&&cur){ out.push(cur); cur=w; } else cur=t; } if(cur) out.push(cur); return out; }
+function makeCard(){
+  const W=1080,H=1920, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d"), cs=getComputedStyle(document.documentElement);
+  const f1=(cs.getPropertyValue("--f1")||"").trim()||"Impact, sans-serif", f2=(cs.getPropertyValue("--f2")||"").trim()||"system-ui, sans-serif", d=lastDeath||{msg:"Data khatam khel khatam",pts:0,map:"",round:1,name:"Player"};
+  const bg=g.createLinearGradient(0,0,0,H); bg.addColorStop(0,"#12032a"); bg.addColorStop(.55,"#4a1485"); bg.addColorStop(1,"#c2189a"); g.fillStyle=bg; g.fillRect(0,0,W,H);
+  g.fillStyle="#ffffff22"; for(let i=0;i<46;i++){ g.beginPath(); g.arc(rnd(0,W),rnd(0,H),rnd(3,11),0,7); g.fill(); }
+  g.textAlign="center"; g.textBaseline="alphabetic";
+  g.fillStyle="#ffe066"; g.font="800 30px "+f2; g.fillText("★ A DAVICCINO PRODUCTION ★",W/2,108);
+  const ts=fitSize(g,"BHAAG BRAINROT","400",f1,112,W-120); g.font="400 "+ts+"px "+f1; g.fillStyle="#000"; g.fillText("BHAAG BRAINROT",W/2+6,108+ts*.95+6); g.fillStyle="#fff"; g.fillText("BHAAG BRAINROT",W/2,108+ts*.95);
+  const px=70,py=290,pw=940,ph=1090;
+  g.save(); g.shadowColor="#ff3df0"; g.shadowBlur=50; rrect(g,px,py,pw,ph,36); g.fillStyle="#000"; g.fill(); g.restore();
+  g.save(); rrect(g,px,py,pw,ph,36); g.clip();
+  if(snapC){ const s=Math.max(pw/snapC.width,ph/snapC.height), sw=pw/s, sh=ph/s; g.drawImage(snapC,(snapC.width-sw)/2,(snapC.height-sh)/2,sw,sh,px,py,pw,ph); }
+  else { const gr=g.createLinearGradient(0,py,0,py+ph); gr.addColorStop(0,"#2a0a52"); gr.addColorStop(1,"#6a1b9a"); g.fillStyle=gr; g.fillRect(px,py,pw,ph); g.font="400 360px sans-serif"; g.fillText("💀",W/2,py+ph/2+120); }
+  g.restore(); g.lineWidth=10; g.strokeStyle="#ffe066"; rrect(g,px,py,pw,ph,36); g.stroke();
+  g.fillStyle="#ff9ff3"; g.font="800 36px "+f2; g.fillText((d.name||"PLAYER").toUpperCase().slice(0,18)+" GOT COOKED 💀",W/2,1450);
+  g.font="400 84px "+f1; let lines=wrapLines(g,d.msg||"",pw); if(lines.length>2){ g.font="400 64px "+f1; lines=wrapLines(g,d.msg||"",pw); }
+  const lh=lines.length>2?74:96; lines.forEach((ln,i)=>{ g.fillStyle="#b00020"; g.fillText(ln,W/2+4,1545+i*lh+5); g.fillStyle="#fff"; g.fillText(ln,W/2,1545+i*lh); });
+  const chip="+"+d.pts+" points"+(d.map?"  ·  Round "+d.round+"  ·  "+d.map:""); g.font="800 36px "+f2; const cw=Math.min(W-100,g.measureText(chip).width+70);
+  g.fillStyle="#ffb703"; rrect(g,(W-cw)/2,1712,cw,70,35); g.fill(); g.fillStyle="#2b0a00"; g.fillText(chip,W/2,1760);
+  g.fillStyle="#fff"; g.font="800 34px "+f2; g.fillText("Think you can survive? 👉 "+location.host,W/2,1846); g.fillStyle="#ffe066"; g.fillText("@"+CFG.insta,W/2,1893);
+  return c;
+}
+function openCard(){ cardCv=makeCard(); $("cardImg").src=cardCv.toDataURL("image/png"); $("card").style.display="grid"; }
+function saveCard(){ if(!cardCv) return; const a=document.createElement("a"); a.download="bhaag-brainrot.png"; a.href=cardCv.toDataURL("image/png"); document.body.appendChild(a); a.click(); a.remove(); }
+function shareCard(){
+  if(!cardCv) return;
+  cardCv.toBlob(b=>{
+    try{ const f=new File([b],"bhaag-brainrot.png",{type:"image/png"}), data={files:[f],title:"BHAAG BRAINROT",text:"I got cooked on BHAAG BRAINROT 💀 can you survive? "+location.origin};
+      if(navigator.canShare&&navigator.canShare({files:[f]})) navigator.share(data).catch(()=>{}); else saveCard(); }catch(e){ saveCard(); }
+  },"image/png");
+}
+$("shareBtn").onclick=openCard; $("cardClose").onclick=()=>{ $("card").style.display="none"; }; $("cardShare").onclick=shareCard; $("cardSave").onclick=saveCard;
+$("sndBtn").textContent=AUD.on?"🔊":"🔇";
+$("sndBtn").onclick=()=>{ AUD.on=!AUD.on; try{ localStorage.setItem("bb3d-snd",AUD.on?"1":"0"); }catch(e){} if(AUD.master) AUD.master.gain.setTargetAtTime(AUD.on?1:0,actx.currentTime,.05); $("sndBtn").textContent=AUD.on?"🔊":"🔇"; };
+addEventListener("keydown",e=>{ if(e.key==="Escape") $("card").style.display="none"; });
+
 function frame(t){
   requestAnimationFrame(frame);
-  let raw=(t-last)/1000; last=t; if(!(raw>0)) raw=.016; const dt=Math.min(raw,.05);
+  let raw=(t-last)/1000; last=t; if(!(raw>0)) raw=.016; const dt0=Math.min(raw,.05); if(hitSlowT>0) hitSlowT-=dt0; const dt=dt0*(hitSlowT>0?.3+.7*(1-hitSlowT/.55):1);   // a beat of slow motion when you get caught (solo only)
   time+=dt;
   if(raw>1/38&&raw<.5) slow+=raw; else slow=Math.max(0,slow-dt*.5);
   if(slow>2.5){ slow=0; if(Q.post&&BB.look.bloom>0&&!Q.noBloom){ Q.noBloom=true; Q.bloomScale=.5; BB.postLook(); } else if(Q.post){ BB.setPost(false); } else if(Q.pr>.8){ Q.pr=Math.max(.75,Q.pr-.25); BB.resize(); } else if(Q.shadows) BB.setShadows(false); }
@@ -608,10 +737,14 @@ function frame(t){
     camYaw+=dt*.12; camPitch=.3; camDistT=camDist=30; updateCamera(dt,0,0,4.6);
   } else {
     let tgt=player;
-    if(player&&!player.alive&&state==="play") tgt=runners.find(r=>r.alive)||player;
+    if(player&&!player.alive&&state==="play"){ player.deadT=(player.deadT||0)+dt; tgt=player.deadT<2.6?player:(runners.find(r=>r.alive)||player); }   // stay on your own body for a moment, then spectate
     if(tgt) updateCamera(dt,tgt.x,tgt.z,1.6);
   }
+  if(shakeT>0){ shakeT-=dt0; const a=shakeA*Math.max(0,shakeT/shakeD); camera.position.x+=(Math.random()-.5)*a; camera.position.y+=(Math.random()-.5)*a*.7; camera.position.z+=(Math.random()-.5)*a; }
   BB.skyFollow(); if(BB.sunFollow) BB.sunFollow(camX,camZ);
+  /* close call: a square just missed you */
+  nearT-=dt; if(nearT<=0&&state==="play"&&grace<=0&&player&&player.alive&&player.y<2){ for(const c of chasers){ const d=Math.hypot(player.x-c.x,player.z-c.z); if(d>SQ_HIT&&d<SQ_HIT*1.5){ nearT=3.5; nearMiss(); break; } } }
+  audTick(dt);
 
   /* lobby prompt */
   if(state==="lobby"&&player){
@@ -641,6 +774,7 @@ function frame(t){
     if(hintT<12){ hintT+=.1; if(hintT>=9) hintEl.style.opacity="0"; }
   }
   BB.render(t);
+  if(snapAt&&performance.now()>=snapAt){ snapAt=0; grabSnap(); }   // grab the picture right after drawing, while the buffer is still valid
 }
 
 /* ---------- boot ---------- */
@@ -759,6 +893,7 @@ function runAdmin(line){
     case "ann": if(rest){ showBanner(esc(rest),3200); ok("announced"); } else no("/ann your text"); break;
     case "fx": for(let i=0;i<6;i++) setTimeout(()=>emit(rnd(-8,8),rnd(8,16),rnd(-8,8),70,null,10,1.6,5,0),i*220); ok("fireworks"); break;
     case "her": { const on=(a[0]||"on")!=="off"; HER=on; if(on){ herFirst=true; if(inLobby) herLobbyIntro(); } ok("surprise mode "+(on?"ON":"off")); break; }
+    case "card": { openCard(); ok("share card opened"); break; }
     case "map": { const m=W.MAPS.find(x=>x.key===(a[0]||"").toLowerCase()); if(m){ nextDef=m; prebuilt=false; bc({t:"map",key:m.key}); updateLB(); ok("next map: "+m.name); } else no("bazaar | disco | classroom | taj"); break; }
     case "quality": if(a[0]==="low"){ Q.pr=.75; BB.setShadows(false); BB.resize(); ok("low quality"); } else if(a[0]==="high"){ Q.pr=Math.min(devicePixelRatio||1,TOUCH?1.5:2); BB.setShadows(!TOUCH); BB.resize(); ok("high quality"); } else no("/quality low|high"); break;
     case "hash": if(rest){ ok("adminHash: "+cyrb53(rest,7)+"   <i>(paste into config.js)</i>"); } else no("/hash yournewpasscode"); break;
