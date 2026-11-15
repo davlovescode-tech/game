@@ -127,10 +127,19 @@ async function discover(folder,kind,max,keep){
   if(keep) while(found.length&&!found[found.length-1]) found.pop();
   return found;
 }
+async function haveFile(u){ try{ const r=await fetch(u,{method:"HEAD"}); return r.ok&&!/text\/html/.test(r.headers.get("content-type")||""); }catch(e){ return false; } }
+async function findPeople(){
+  const list=[]; let miss=0;
+  for(let i=1;i<=12&&miss<3;i++){ const u="assets/models/chars/"+i+".glb"; if(await haveFile(u)){ list.push(u); miss=0; } else miss++; }
+  return {list:list,davi:(await haveFile("assets/models/daviccino.glb"))?"assets/models/daviccino.glb":null};
+}
 async function discoverAll(){
   const r=await Promise.all([discover("assets/faces","img",60,true),discover("assets/sounds/start","snd"),discover("assets/sounds/death","snd"),discover("assets/sounds/random","snd"),discover("assets/sounds/daviccino","snd"),discover("assets/daviccino","img",1),discover("assets/sounds/faces","snd",60,true)]);
+  /* characters: the stock Soldier always (fallback + animation donor); optional real people in assets/models/chars/1.glb, 2.glb ... and assets/models/daviccino.glb */
   const charOK=await BB.loadCharacter("assets/models/Soldier.glb");
-  if(charOK){ runners.forEach(x=>BB.realify(x.av)); if(hub&&hub.davi) BB.realify(hub.davi); }
+  if(charOK){ runners.forEach(x=>BB.realify(x.av)); if(hub&&hub.davi) BB.realify(hub.davi);
+    /* the extra people are several MB: fetch them in the background so Play isn't held up, then swap them in */
+    findPeople().then(f=>(f.list.length||f.davi)?BB.loadExtraCharacters(f.list,f.davi):0).then(n=>{ if(n){ runners.forEach(x=>BB.reskin(x.av)); if(hub&&hub.davi) BB.reskin(hub.davi); } }).catch(()=>{}); }
   FACE_URLS=r[0]; SND.start=r[1]; SND.death=r[2]; SND.random=r[3]; SND.davi=r[4]; DAVI_URL=r[5][0]||null; FACE_SND=r[6];
 }
 function cropToCanvas(img,size){
@@ -256,7 +265,7 @@ $("boardBtn").onclick=()=>{ lbOpen=!lbOpen; syncLB(); };
 
 /* ---------- runners ---------- */
 function mkRunner(name,isYou,i,id,look0){
-  const look=look0||(isYou?{shirt:0xffb703,pants:0x2a3050,skin:0xe0ac69,hair:0x111111,face:0,shades:false}:BB.randomLook(i));
+  const look=look0||(isYou?{ci:(BB._yci=BB._yci===undefined?Math.floor(Math.random()*100):BB._yci),shirt:0xffb703,pants:0x2a3050,skin:0xe0ac69,hair:0x111111,face:0,shades:false}:BB.randomLook(i));
   const av=BB.makeAvatar(Object.assign({name:name,isYou:isYou},look)); scene.add(av.group);
   return {id:id||(isYou?"you":"bot"+i),look:look,name:name,isPlayer:isYou,av:av,x:0,z:0,y:0,vy:0,yaw:0,alive:true,pts:0,moving:0,speed:isYou?8.2:rnd(6.7,7.7),skill:rnd(.35,.95),
     wx:0,wz:0,wanderT:0,thinkT:0,jumpCd:0,wantJump:false,shield:0,invuln:0,juiceT:0,bonus:0,tgt:null,idleT:rnd(0,2),rt:0};

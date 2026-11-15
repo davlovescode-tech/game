@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Character converter</title>
+<style>
+  :root{--bg:#0c0a16;--card:#17132a;--ink:#f3eefc;--dim:#a79fc4;--acc:#ffd23f;--pink:#ff3df0;--ok:#3ddc84;--bad:#ff6b6b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;padding:24px 16px 60px}
+  main{max-width:860px;margin:0 auto}
+  h1{margin:0 0 4px;font-size:26px;letter-spacing:.5px}
+  h1 span{color:var(--acc)}
+  p.sub{margin:0 0 18px;color:var(--dim)}
+  ol{margin:0 0 18px;padding-left:20px;color:var(--dim)} ol b{color:var(--ink)}
+  #drop{border:2px dashed #4b3f7a;border-radius:16px;padding:34px 16px;text-align:center;background:var(--card);cursor:pointer;transition:.15s}
+  #drop.over{border-color:var(--acc);background:#211a3c}
+  #drop big{display:block;font-size:18px;margin-bottom:4px}
+  #drop small{color:var(--dim)}
+  .opts{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:14px 0;color:var(--dim)}
+  select,button{font:inherit;color:var(--ink);background:#251d46;border:1px solid #4b3f7a;border-radius:10px;padding:7px 12px;cursor:pointer}
+  button:hover{border-color:var(--acc)} button.go{background:var(--acc);color:#1a1200;border-color:var(--acc);font-weight:700}
+  button:disabled{opacity:.45;cursor:default}
+  #log{margin:10px 0;color:var(--dim);font-size:13px;white-space:pre-wrap;min-height:1.4em}
+  #log .bad{color:var(--bad)}
+  .row{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid #2c2352;border-radius:12px;padding:10px 12px;margin:8px 0;flex-wrap:wrap}
+  .row .nm{flex:1;min-width:150px;word-break:break-all} .row .nm small{display:block;color:var(--dim)}
+  .row.sel{border-color:var(--pink)}
+  #stage{display:none;margin:14px 0;text-align:center}
+  #stage canvas{width:260px;height:340px;border-radius:14px;background:radial-gradient(#2a2150,#100c20);border:1px solid #2c2352}
+  #stage div{color:var(--dim);font-size:13px}
+  .note{margin-top:22px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Character <span>converter</span></h1>
+  <p class="sub">Turns Mixamo <code>.fbx</code> characters into small <code>.glb</code> files the game can load. Everything happens in your browser, nothing is uploaded.</p>
+  <ol>
+    <li>On mixamo.com pick a character, press <b>Download</b>, choose <b>FBX Binary (.fbx)</b>, <b>T-pose</b>, <b>With Skin</b>. No animation needed.</li>
+    <li>Drop the downloaded <b>.fbx</b> files (or the <b>.zip</b> Mixamo gives you) below. Several at once is fine.</li>
+    <li>Pick which one is Daviccino, then press <b>Download zip</b> and unzip it into your repo's <code>assets/models/</code> folder.</li>
+  </ol>
+  <div id="drop"><big>Drop .fbx / .zip files here</big><small>or click to choose (include the texture images too if Mixamo gave them separately)</small></div>
+  <input id="pick" type="file" multiple accept=".fbx,.zip,.png,.jpg,.jpeg" hidden>
+  <div class="opts">
+    <label>Texture size <select id="tsz"><option value="512">512 (smallest)</option><option value="1024" selected>1024 (recommended)</option><option value="2048">2048 (big)</option></select></label>
+    <label>JPEG quality <select id="jq"><option value=".75">75</option><option value=".85" selected>85</option><option value=".92">92</option></select></label>
+  </div>
+  <div id="log"></div>
+  <div id="rows"></div>
+  <div id="stage"><canvas id="cv" width="520" height="680"></canvas><div id="stageName"></div></div>
+  <div class="opts"><button id="zipBtn" class="go" disabled>Download zip</button><span id="zipInfo"></span></div>
+  <p class="note">Mixamo characters are Adobe's: their terms let you use them in a game, but not hand out the raw files. This tool only produces the in-game <code>.glb</code>. Read Adobe's terms before making your repo public.</p>
+</main>
+
+<script src="../lib/three.min.js"></script>
+<script src="../lib/fflate.min.js"></script>
+<script src="../lib/FBXLoader.js"></script>
+<script src="../lib/GLTFLoader.js"></script>
+<script src="../lib/GLTFExporter.js"></script>
+<script src="../lib/BufferGeometryUtils.js"></script>
+<script>
+(function(){
+"use strict";
+const T=THREE, $=id=>document.getElementById(id);
+const logEl=$("log"), rowsEl=$("rows");
+const items=[];   // {name, glb:Uint8Array, kb, role}
+function log(s,bad){ const d=document.createElement("div"); if(bad) d.className="bad"; d.textContent=s; logEl.appendChild(d); }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let jpegQ=.85;   // GLTFExporter writes JPEGs through canvas.toBlob, so the quality choice is injected here
+const _toBlob=HTMLCanvasElement.prototype.toBlob;
+HTMLCanvasElement.prototype.toBlob=function(cb,type,q){ return _toBlob.call(this,cb,type,type==="image/jpeg"?jpegQ:q); };
+const base=n=>n.replace(/\\/g,"/").split("/").pop();
+const ext=n=>(n.split(".").pop()||"").toLowerCase();
+
+/* ---------- reading what was dropped (fbx, images, zips) ---------- */
+async function expand(files){
+  const out=[];
+  for(const f of files){
+    if(ext(f.name)==="zip"){
+      try{ const z=fflate.unzipSync(new Uint8Array(await f.arrayBuffer())); for(const k in z) if(!k.endsWith("/")) out.push({name:k,data:z[k]}); }
+      catch(e){ log("Could not open "+f.name+": "+e.message,true); }
+    } else out.push({name:f.name,data:new Uint8Array(await f.arrayBuffer())});
+  }
+  return out;
+}
+
+/* ---------- texture work: shrink, find out if it needs alpha, write opaque ones as JPEG ---------- */
+function loaded(img){ return img&&(img.complete!==false)&&(img.naturalWidth||img.width)>0; }
+function texList(obj){
+  const set=new Set();
+  obj.traverse(n=>{ if(!n.material) return; (Array.isArray(n.material)?n.material:[n.material]).forEach(m=>{ ["map","normalMap","alphaMap","specularMap","emissiveMap"].forEach(k=>{ if(m[k]) set.add(m[k]); }); }); });
+  return [...set];
+}
+async function waitTextures(obj){
+  const t0=performance.now();
+  while(performance.now()-t0<20000){
+    const bad=texList(obj).filter(t=>!loaded(t.image));
+    if(!bad.length) return true; await sleep(120);
+  }
+  return false;
+}
+function drawScaled(img,max){
+  const w0=img.naturalWidth||img.width, h0=img.naturalHeight||img.height, s=Math.min(1,max/Math.max(w0,h0));
+  const c=document.createElement("canvas"); c.width=Math.max(1,Math.round(w0*s)); c.height=Math.max(1,Math.round(h0*s));
+  const g=c.getContext("2d",{willReadFrequently:true}); g.drawImage(img,0,0,c.width,c.height); return c;
+}
+function hasAlpha(c){ const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data; let n=0; for(let i=3;i<d.length;i+=4) if(d[i]<235&&++n>40) return true; return false; }
+function prepTexture(src,srgb,max,alphaSrc){
+  let c=drawScaled(src.image,max);
+  if(alphaSrc&&loaded(alphaSrc.image)){   // separate opacity map -> fold into the colour map's alpha channel
+    const a=drawScaled(alphaSrc.image,max), g=c.getContext("2d"), px=g.getImageData(0,0,c.width,c.height), ap=document.createElement("canvas");
+    ap.width=c.width; ap.height=c.height; const ag=ap.getContext("2d"); ag.drawImage(a,0,0,c.width,c.height); const ad=ag.getImageData(0,0,c.width,c.height).data;
+    for(let i=0;i<px.data.length;i+=4) px.data[i+3]=ad[i]; g.putImageData(px,0,0);
+  }
+  const alpha=srgb&&hasAlpha(c);
+  const t=new T.CanvasTexture(c); t.flipY=src.flipY; t.wrapS=src.wrapS; t.wrapT=src.wrapT; t.anisotropy=1;
+  t.encoding=srgb?T.sRGBEncoding:T.LinearEncoding; t.format=alpha?T.RGBAFormat:T.RGBFormat; t.userData.alpha=alpha; return t;
+}
+function toStandard(m,max,cache){
+  const get=(tex,srgb,a)=>{ if(!tex||!loaded(tex.image)) return null; const k=tex.uuid+(a?a.uuid:"")+srgb; if(!cache.has(k)) cache.set(k,prepTexture(tex,srgb,max,a)); return cache.get(k); };
+  const map=get(m.map,true,m.alphaMap&&m.map?m.alphaMap:null);
+  const n=new T.MeshStandardMaterial({name:m.name,color:map?0xffffff:(m.color?m.color.getHex():0xcccccc),roughness:.85,metalness:0,side:m.side});
+  if(map){ n.map=map; if(map.userData.alpha){ n.alphaTest=.5; n.side=T.DoubleSide; } }
+  const nm=get(m.normalMap,false); if(nm) n.normalMap=nm;
+  return n;
+}
+
+/* ---------- one FBX -> one GLB ---------- */
+async function convert(file,images,max,quality){
+  jpegQ=quality||.85;
+  const urls={}; images.forEach(im=>{ urls[base(im.name).toLowerCase()]=URL.createObjectURL(new Blob([im.data],{type:ext(im.name)==="png"?"image/png":"image/jpeg"})); });
+  const mgr=new T.LoadingManager(); mgr.setURLModifier(u=>{ const b=base(decodeURIComponent(u)).toLowerCase(); return urls[b]||u; });
+  const buf=file.data.buffer.slice(file.data.byteOffset,file.data.byteOffset+file.data.byteLength);
+  const obj=new T.FBXLoader(mgr).parse(buf,"");
+  const okTex=await waitTextures(obj);
+  if(!okTex) log("  some textures did not load (missing image files?) - those parts will be plain colour",true);
+  const cache=new Map(); let meshes=0;
+  obj.traverse(n=>{
+    if(n.name) n.name=n.name.replace(/^mixamorig:/,"mixamorig");
+    if(n.isMesh||n.isSkinnedMesh){
+      meshes++; n.castShadow=n.receiveShadow=false;
+      if(!n.geometry.index) n.geometry=T.BufferGeometryUtils.mergeVertices(n.geometry);   // FBX arrives unindexed: sharing vertices makes the file several times smaller
+      n.material=Array.isArray(n.material)?n.material.map(m=>toStandard(m,max,cache)):toStandard(n.material,max,cache);
+    }
+  });
+  if(!meshes) throw new Error("no mesh found in this file");
+  if(!obj.getObjectByName("mixamorigHips")) log("  warning: no 'mixamorigHips' bone - this does not look like a Mixamo character, it will not animate",true);
+  obj.animations=[]; obj.updateMatrixWorld(true);
+  const glb=await new Promise((res,rej)=>{ new T.GLTFExporter().parse(obj,r=>res(r),{binary:true,onlyVisible:false,maxTextureSize:max,animations:[]}); });
+  Object.values(urls).forEach(u=>URL.revokeObjectURL(u));
+  return {glb:new Uint8Array(glb),tex:cache.size};
+}
+
+/* ---------- UI ---------- */
+function render(){
+  rowsEl.innerHTML="";
+  let pn=0;
+  items.forEach((it,i)=>{
+    const d=document.createElement("div"); d.className="row"+(it.sel?" sel":"");
+    const target=it.role==="davi"?"assets/models/daviccino.glb":"assets/models/chars/"+(it.num=++pn)+".glb";
+    if(it.role==="davi") pn--;
+    d.innerHTML='<div class="nm"><b></b><small></small></div>';
+    d.querySelector("b").textContent=it.name; d.querySelector("small").textContent=(it.kb>1024?(it.kb/1024).toFixed(1)+" MB":it.kb+" KB")+"  ->  "+target+"  ("+it.tex+" textures)";
+    const sel=document.createElement("select"); [["person","Everyone else"],["davi","Daviccino"]].forEach(o=>{ const op=document.createElement("option"); op.value=o[0]; op.textContent=o[1]; if(it.role===o[0]) op.selected=true; sel.appendChild(op); });
+    sel.onchange=()=>{ if(sel.value==="davi") items.forEach(x=>{ if(x!==it&&x.role==="davi") x.role="person"; }); it.role=sel.value; render(); };
+    const pv=document.createElement("button"); pv.textContent="Preview"; pv.onclick=()=>preview(it);
+    const dl=document.createElement("button"); dl.textContent="Download .glb"; dl.onclick=()=>save(new Blob([it.glb],{type:"model/gltf-binary"}),target.split("/").pop());
+    d.append(sel,pv,dl); rowsEl.appendChild(d); it.target=target;
+  });
+  $("zipBtn").disabled=!items.length;
+  $("zipInfo").textContent=items.length?items.length+" character"+(items.length>1?"s":"")+", "+Math.round(items.reduce((a,x)=>a+x.kb,0)/102.4)/10+" MB total":"";
+}
+function save(blob,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },3000); }
+$("zipBtn").onclick=()=>{
+  const z={}; items.forEach(it=>{ z[it.target]=[it.glb,{level:0}]; });
+  save(new Blob([fflate.zipSync(z)],{type:"application/zip"}),"characters.zip");
+};
+
+/* tiny turntable preview of the converted glb (round-trips through GLTFLoader, so it shows what the game will get) */
+let rend=null,scn=null,cam=null,spin=null,raf=0;
+function preview(it){
+  items.forEach(x=>x.sel=(x===it)); render();
+  $("stage").style.display="block"; $("stageName").textContent=it.name;
+  if(!rend){
+    rend=new T.WebGLRenderer({canvas:$("cv"),antialias:true}); rend.setPixelRatio(1); rend.setClearColor(0x1b1536,1); rend.outputEncoding=T.sRGBEncoding;
+    scn=new T.Scene(); cam=new T.PerspectiveCamera(30,520/680,.1,1000);
+    scn.add(new T.HemisphereLight(0xffffff,0x554466,1.1)); const dl=new T.DirectionalLight(0xffffff,1.3); dl.position.set(2,4,3); scn.add(dl);
+  }
+  if(spin){ scn.remove(spin); spin=null; }
+  new T.GLTFLoader().parse(it.glb.buffer.slice(0),"",g=>{
+    const m=g.scene, box=new T.Box3().setFromObject(m), s=new T.Vector3(); box.getSize(s); const c=new T.Vector3(); box.getCenter(c);
+    const k=1.8/s.y; m.scale.multiplyScalar(k); m.position.sub(c.multiplyScalar(k)); spin=new T.Group(); spin.add(m); scn.add(spin);
+    cam.position.set(0,0,5.4); cam.lookAt(0,0,0);
+    cancelAnimationFrame(raf); (function loop(){ if(spin) spin.rotation.y+=.012; rend.render(scn,cam); raf=requestAnimationFrame(loop); })();
+  },e=>log("Preview failed: "+(e&&e.message||e),true));
+}
+
+/* ---------- drop handling ---------- */
+let busy=false;
+async function handle(fileList){
+  if(busy) return; busy=true; logEl.textContent="";
+  try{
+    const all=await expand([...fileList]);
+    const fbx=all.filter(f=>ext(f.name)==="fbx"), imgs=all.filter(f=>/^(png|jpe?g)$/.test(ext(f.name)));
+    if(!fbx.length){ log("No .fbx file found in what you dropped.",true); return; }
+    const max=+$("tsz").value, q=+$("jq").value;
+    for(const f of fbx){
+      log("Converting "+base(f.name)+" ...");
+      try{
+        const r=await convert(f,imgs,max,q);
+        items.push({name:base(f.name).replace(/\.fbx$/i,""),glb:r.glb,kb:Math.round(r.glb.length/1024),tex:r.tex,role:"person"});
+        log("  done: "+Math.round(r.glb.length/1024)+" KB");
+        if(r.glb.length>4*1024*1024) log("  that is big - pick a smaller texture size to keep the game quick to load",true);
+      }catch(e){ log("  failed: "+(e&&e.message||e),true); console.error(e); }
+      render(); await sleep(0);
+    }
+    if(items.length&&!items.some(x=>x.role==="davi")) log("Tip: choose which one is Daviccino in the list below.");
+  } finally { busy=false; }
+}
+const drop=$("drop");
+drop.onclick=()=>$("pick").click();
+$("pick").onchange=e=>{ handle(e.target.files); e.target.value=""; };
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop",e=>handle(e.dataTransfer.files));
+window.addEventListener("dragover",e=>e.preventDefault()); window.addEventListener("drop",e=>e.preventDefault());
+window.__conv={convert:convert,handle:handle,items:items};   // handy for testing
+})();
+</script>
+</body>
+</html>

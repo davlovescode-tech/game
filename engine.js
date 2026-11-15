@@ -509,37 +509,142 @@ const HAIRS=[0x111111,0x2b1b12,0x3a2a1a,0x6b3a1a,0x1a1a40];
 
 
 /* ---------- realistic characters: a real skinned, animated human model (loaded from assets/models) ---------- */
-BB.char=null;
-BB.loadCharacter=function(url){
+BB.char=null;       /* the stock Soldier: fallback body for everybody, and the donor of the idle/walk/run clips */
+BB.chars=[];        /* optional extra people dropped into assets/models/chars/N.glb (Mixamo, T-pose, no animation needed) */
+BB.daviChar=null;   /* optional assets/models/daviccino.glb */
+function loadGLB(url){
   return new Promise(res=>{
-    if(!T.GLTFLoader||!T.SkeletonUtils){ res(false); return; }
-    try{
-      new T.GLTFLoader().load(url,g=>{
-        const box=new T.Box3().setFromObject(g.scene), h=Math.max(.01,box.max.y-box.min.y);
-        BB.char={scene:g.scene,clips:g.animations,h:h,minY:box.min.y};
-        res(true);
-      },undefined,()=>res(false));
-    }catch(e){ res(false); }
+    if(!T.GLTFLoader||!T.SkeletonUtils){ res(null); return; }
+    try{ new T.GLTFLoader().load(url,g=>{
+      /* Ready Player Me style rigs name the same bones without the "mixamorig" prefix (Hips, Spine, ...): add it so every lookup and clip works on both */
+      if(g.scene.getObjectByName("Hips")&&!g.scene.getObjectByName("mixamorigHips")) g.scene.traverse(n=>{ if(n.isBone&&!/^mixamorig/.test(n.name)) n.name="mixamorig"+n.name; });
+      const root=new T.Group(); root.add(g.scene); res({scene:root,animations:g.animations}); },undefined,()=>res(null)); }catch(e){ res(null); }  /* wrapped, so a scale/rotation stored in the file stays and realify can scale/turn the wrapper */
   });
+}
+/* size, ground level, hip scale and which way the model faces (toes vs ankle) -- measured, so any Mixamo export works */
+function measureChar(scene){
+  scene.updateMatrixWorld(true);
+  /* skinned meshes: measure where the vertices really end up under the skeleton (a Blender/Mixamo export often scales the armature by .01 and leaves the mesh box meaningless) */
+  const box=new T.Box3(), v=new T.Vector3();
+  scene.traverse(n=>{
+    if(n.isSkinnedMesh&&n.geometry.attributes.position){ const cnt=n.geometry.attributes.position.count; for(let i=0;i<cnt;i+=3){ n.boneTransform(i,v); v.applyMatrix4(n.matrixWorld); box.expandByPoint(v); } }
+    else if(n.isMesh) box.expandByObject(n);
+  });
+  const h=Math.max(.01,box.max.y-box.min.y);
+  const hips=scene.getObjectByName("mixamorigHips"), ps=new T.Vector3(1,1,1);
+  if(hips&&hips.parent) hips.parent.getWorldScale(ps);
+  let face=-1; const ft=scene.getObjectByName("mixamorigLeftFoot"), toe=scene.getObjectByName("mixamorigLeftToeBase");
+  if(ft&&toe){ const a=new T.Vector3(), b=new T.Vector3(); ft.getWorldPosition(a); toe.getWorldPosition(b); face=(b.z-a.z)>=0?1:-1; }
+  return {h:h,minY:box.min.y,hipU:ps.y||1,rot:face>0?0:Math.PI};
+}
+function pickClip(clips,name){ return clips.find(x=>x.name.toLowerCase()===name)||clips.find(x=>x.name.toLowerCase().indexOf(name)>=0); }
+const CLIP_NAMES=["idle","walk","run"];
+/* Re-aim the donor's clips at another rig that uses the same bone names (Mixamo, Ready Player Me ...).
+   Local bone rotations can't simply be copied: exporters give each rig its own bone axes. So each frame is solved in world space:
+   how far has every donor bone turned from its own rest pose (a world-space delta)? Apply the same delta to the new body's rest pose,
+   then turn that back into local rotations. C turns the donor's facing into the new body's (the Soldier looks down -z, others +z).
+   The hips' travel is rescaled to the new body's size; no other bone moves, so limb lengths stay the new body's. */
+const _Y=new T.Vector3(0,1,0);
+function restInfo(scene){
+  scene.updateMatrixWorld(true);
+  const o={}, order=[], p=new T.Vector3(), s=new T.Vector3();
+  scene.traverse(n=>{ if(!n.isBone) return; const q=new T.Quaternion(); n.matrixWorld.decompose(p,q,s); o[n.name]={q:q,loc:n.quaternion.clone(),par:(n.parent&&n.parent.isBone)?n.parent.name:null}; order.push(n.name); });
+  return {m:o,order:order};
+}
+function retargetClips(donor,dst){
+  const out={}, S=restInfo(donor.scene), D=restInfo(dst.scene);
+  const hS=donor.scene.getObjectByName("mixamorigHips"), hD=dst.scene.getObjectByName("mixamorigHips");
+  if(!hS||!hD) return out;
+  const qaS=hS.parent.getWorldQuaternion(new T.Quaternion()), qaD=hD.parent.getWorldQuaternion(new T.Quaternion());
+  const qaDi=qaD.clone().invert();
+  const C=new T.Quaternion().setFromAxisAngle(_Y,donor.rot-dst.rot), Ci=C.clone().invert();
+  const f=donor.hipU*(dst.h/donor.h)/dst.hipU, FPS=30;
+  const ql=new T.Quaternion(), dl=new T.Quaternion(), wt=new T.Quaternion(), pw=new T.Quaternion(), qa=new T.Quaternion(), v=new T.Vector3();
+  CLIP_NAMES.forEach(n=>{
+    const c=pickClip(donor.clips,n); if(!c) return;
+    const qi={}; let hp=null;
+    c.tracks.forEach(t=>{
+      const i=t.name.lastIndexOf("."), node=t.name.slice(0,i), prop=t.name.slice(i+1);
+      if(prop==="quaternion") qi[node]=t.createInterpolant(); else if(prop==="position"&&node==="mixamorigHips") hp=t.createInterpolant();
+    });
+    const N=Math.max(2,Math.round(c.duration*FPS)+1), times=[], vals={}, hv=[];
+    D.order.forEach(b=>{ if(qi[b]) vals[b]=[]; });
+    const Ws={}, Wt={}, last={};
+    for(let k=0;k<N;k++){
+      const t=Math.min(c.duration,k*c.duration/(N-1)); times.push(t);
+      S.order.forEach(b=>{ const r=S.m[b]; if(qi[b]) ql.fromArray(qi[b].evaluate(t)); else ql.copy(r.loc); Ws[b]=(r.par?Ws[r.par].clone():qaS.clone()).multiply(ql); });
+      D.order.forEach(b=>{
+        const r=D.m[b], pq=r.par?Wt[r.par]:qaD;
+        if(qi[b]&&S.m[b]){
+          dl.copy(Ws[b]).multiply(S.m[b].q.clone().invert());      // donor's world-space delta from rest
+          dl.premultiply(C).multiply(Ci);                          // into the new body's facing
+          wt.copy(dl).multiply(r.q);                               // new bone's animated world rotation
+          qa.copy(pq).invert().multiply(wt);                       // back to local
+          if(last[b]&&last[b].dot(qa)<0){ qa.x=-qa.x; qa.y=-qa.y; qa.z=-qa.z; qa.w=-qa.w; }
+          last[b]=(last[b]||new T.Quaternion()).copy(qa);
+          vals[b].push(qa.x,qa.y,qa.z,qa.w); Wt[b]=wt.clone();
+        } else Wt[b]=pq.clone().multiply(r.loc);
+      });
+      /* hips: only the travel away from the rest pose is carried over (scaled), added to the new body's own rest position, so its feet land on the floor whatever its leg proportions */
+      if(hp){ v.fromArray(hp.evaluate(t)).sub(hS.position).applyQuaternion(qaS).applyQuaternion(C).multiplyScalar(f).applyQuaternion(qaDi).add(hD.position); hv.push(v.x,v.y,v.z); }
+    }
+    const tr=[]; for(const b in vals) tr.push(new T.QuaternionKeyframeTrack(b+".quaternion",times,vals[b]));
+    if(hp) tr.push(new T.VectorKeyframeTrack("mixamorigHips.position",times,hv));
+    out[n]=new T.AnimationClip(n,c.duration,tr);
+  });
+  return out;
+}
+function ownClips(g){ const o={}; CLIP_NAMES.forEach(n=>{ const c=pickClip(g.animations,n); if(c) o[n]=c; }); return o; }
+BB.loadCharacter=async function(url){
+  const g=await loadGLB(url); if(!g) return false;
+  BB.char=Object.assign({scene:g.scene,clips:g.animations,set:ownClips(g),name:"soldier"},measureChar(g.scene));
+  return true;
 };
-function clipByName(name){ const c=BB.char.clips; return c.find(x=>x.name.toLowerCase()===name)||c.find(x=>x.name.toLowerCase().indexOf(name)>=0); }
+async function loadPerson(url){
+  const g=await loadGLB(url); if(!g) return null;
+  const c=Object.assign({scene:g.scene,name:url},measureChar(g.scene)), own=ownClips(g);
+  /* the Soldier's clips are what the gait driver was measured against (stride, duration), so every extra body is moved with those, retargeted by bone name; its own clips are only a fallback */
+  c.set=BB.char?retargetClips(BB.char,c):(own.idle&&own.walk&&own.run?own:null);
+  return c.set&&c.set.idle&&c.set.walk&&c.set.run?c:null;   // without a donor (or without clips) the person can't move, so skip them
+}
+/* extras: BB.loadExtraCharacters(["assets/models/chars/1.glb",...], "assets/models/daviccino.glb"); missing files are simply skipped */
+BB.loadExtraCharacters=async function(urls,daviUrl){
+  const r=await Promise.all(urls.map(loadPerson).concat(daviUrl?[loadPerson(daviUrl)]:[]));
+  BB.daviChar=daviUrl?r[r.length-1]:null; BB.chars=r.slice(0,urls.length).filter(Boolean);
+  return BB.chars.length+(BB.daviChar?1:0);
+};
+function bodyFor(av){
+  const o=av.opts||{}, pool=[BB.char].concat(BB.chars).filter(Boolean);   /* everybody picks from the Soldier + any extra people; Daviccino gets his own if provided */
+  return o.davi?(BB.daviChar||BB.char||pool[0]):pool[Math.abs(o.ci||0)%Math.max(1,pool.length)];
+}
+/* extra people load in the background, after the game is already playable: anybody already standing in the scene swaps to the body they should have */
+BB.reskin=function(av){
+  if(!av||!av.real){ BB.realify(av); return; }
+  const ch=bodyFor(av); if(!ch||ch===av.ch) return;
+  av.inner.remove(av.real); av.real=null; av.mixer=null; av.acts=null; av.model=null; av.an=null;
+  BB.realify(av);
+};
 BB.realify=function(av){
-  if(!BB.char||av.real) return; const o=av.opts||{}, dv=!!o.davi;
-  const m=T.SkeletonUtils.clone(BB.char.scene);
-  const target=2.95*(o.hscale||(dv?1:.95+(((o.shirt||0)>>3)%9)*.014)), k=target/BB.char.h;
-  const holder=new T.Group(); holder.add(m); m.scale.setScalar(k); m.position.y=-BB.char.minY*k; m.rotation.y=Math.PI; /* the model faces -z, the game's forward is +z */ av.inner.add(holder);
+  const o=av.opts||{}, dv=!!o.davi;
+  const ch=bodyFor(av);
+  if(!ch||av.real) return;
+  av.ch=ch;
+  const stock=ch===BB.char;     /* only the stock soldier gets recoloured; real people keep their own clothes */
+  const m=T.SkeletonUtils.clone(ch.scene);
+  const target=2.95*(o.hscale||(dv?1:.95+(((o.shirt||0)>>3)%9)*.014)), k=target/ch.h;
+  const holder=new T.Group(); holder.add(m); m.scale.setScalar(k); m.position.y=-ch.minY*k; m.rotation.y=ch.rot; /* measured: Soldier faces -z, the game's forward is +z */ av.inner.add(holder);
   const tint=new T.Color(o.shirt||0xffffff), white=new T.Color(0xffffff);
   m.traverse(n=>{
     if(!n.isMesh&&!n.isSkinnedMesh) return;
     n.castShadow=true; n.receiveShadow=true; n.frustumCulled=false;
     const mats=Array.isArray(n.material)?n.material:[n.material];
-    const cl=mats.map(mm=>{ const c=mm.clone(); c.envMapIntensity=1.1; if(c.map) c.map.anisotropy=maxAniso; if(dv){ c.color.copy(tint).lerp(white,.25); } else c.color.copy(white).lerp(tint,.82); c.roughness=Math.max(.5,c.roughness||0); c.metalness=0; return c; });
+    const cl=mats.map(mm=>{ const c=mm.clone(); c.envMapIntensity=1.1; if(c.map) c.map.anisotropy=maxAniso; if(stock){ if(dv){ c.color.copy(tint).lerp(white,.25); } else c.color.copy(white).lerp(tint,.82); } c.roughness=Math.max(.5,c.roughness||0); c.metalness=0; return c; });
     n.material=Array.isArray(n.material)?cl:cl[0];
   });
   av.bodyParts.forEach(p=>{ p.visible=false; });
   if(av.face&&!dv) av.face.visible=false;
   const mixer=new T.AnimationMixer(m), acts={};
-  ["idle","walk","run"].forEach(n=>{ const c=clipByName(n); if(c){ const a=mixer.clipAction(c); a.play(); a.enabled=true; a.setEffectiveWeight(n==="idle"?1:0); if(n!=="idle") a.paused=true; /* walk/run are driven by gait phase, not by the clock */ acts[n]=a; } });
+  CLIP_NAMES.forEach(n=>{ const c=ch.set[n]; if(c){ const a=mixer.clipAction(c); a.play(); a.enabled=true; a.setEffectiveWeight(n==="idle"?1:0); if(n!=="idle") a.paused=true; /* walk/run are driven by gait phase, not by the clock */ acts[n]=a; } });
   if(acts.idle) acts.idle.time=Math.random()*2;
   av.real=holder; av.mixer=mixer; av.acts=acts; av.cur="idle"; av.model=m; av.sc=target/2.95; av.an=null;
   av.rArm=m.getObjectByName("mixamorigRightArm"); av.lArm=m.getObjectByName("mixamorigLeftArm");
@@ -753,12 +858,13 @@ BB.makeAvatar=function(o){
   }
   inner.scale.setScalar(o.scale||0.75);
   out.legL=legL; out.legR=legR; out.armL=armL; out.armR=armR; out.head=head; out.opts=o; out.inner=inner;
-  if(BB.char) BB.realify(out);
+  if(BB.char||BB.chars.length) BB.realify(out);
   return out;
 };
 BB.randomLook=function(i){
   const shirts=[0xe63946,0x2a9d8f,0xf4a261,0x457b9d,0x9b5de5,0x06d6a0,0xffd166,0xef476f,0x118ab2,0xff7f50];
   const caps=[null,null,0x222222,0xe63946,0x3a86ff,0xffd23f];
-  return {shirt:shirts[i%shirts.length],pants:pick([0x1e2a4a,0x2a2a2a,0x3b2f5e,0x234a3a,0x5a3a22]),skin:pick(SKINS),hair:pick(HAIRS),face:Math.floor(Math.random()*4),cap:pick(caps),shades:Math.random()<.25,pony:Math.random()<.3};
+  if(BB._co===undefined) BB._co=Math.floor(Math.random()*100);
+  return {ci:i+BB._co,shirt:shirts[i%shirts.length],pants:pick([0x1e2a4a,0x2a2a2a,0x3b2f5e,0x234a3a,0x5a3a22]),skin:pick(SKINS),hair:pick(HAIRS),face:Math.floor(Math.random()*4),cap:pick(caps),shades:Math.random()<.25,pony:Math.random()<.3};
 };
 })();
