@@ -108,6 +108,7 @@ function drawScaled(img,max){
   const g=c.getContext("2d",{willReadFrequently:true}); g.drawImage(img,0,0,c.width,c.height); return c;
 }
 function hasAlpha(c){ const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data; let n=0; for(let i=3;i<d.length;i+=4) if(d[i]<235&&++n>40) return true; return false; }
+const alphaTex=new Set();   /* textures that carry real transparency (three r128 textures have no userData to keep this on) */
 function prepTexture(src,srgb,max,alphaSrc){
   let c=drawScaled(src.image,max);
   if(alphaSrc&&loaded(alphaSrc.image)){   // separate opacity map -> fold into the colour map's alpha channel
@@ -117,13 +118,13 @@ function prepTexture(src,srgb,max,alphaSrc){
   }
   const alpha=srgb&&hasAlpha(c);
   const t=new T.CanvasTexture(c); t.flipY=src.flipY; t.wrapS=src.wrapS; t.wrapT=src.wrapT; t.anisotropy=1;
-  t.encoding=srgb?T.sRGBEncoding:T.LinearEncoding; t.format=alpha?T.RGBAFormat:T.RGBFormat; t.userData.alpha=alpha; return t;
+  t.encoding=srgb?T.sRGBEncoding:T.LinearEncoding; t.format=alpha?T.RGBAFormat:T.RGBFormat; alphaTex.add(t); if(!alpha) alphaTex.delete(t); return t;
 }
 function toStandard(m,max,cache){
   const get=(tex,srgb,a)=>{ if(!tex||!loaded(tex.image)) return null; const k=tex.uuid+(a?a.uuid:"")+srgb; if(!cache.has(k)) cache.set(k,prepTexture(tex,srgb,max,a)); return cache.get(k); };
   const map=get(m.map,true,m.alphaMap&&m.map?m.alphaMap:null);
   const n=new T.MeshStandardMaterial({name:m.name,color:map?0xffffff:(m.color?m.color.getHex():0xcccccc),roughness:.85,metalness:0,side:m.side});
-  if(map){ n.map=map; if(map.userData.alpha){ n.alphaTest=.5; n.side=T.DoubleSide; } }
+  if(map){ n.map=map; if(alphaTex.has(map)){ n.alphaTest=.5; n.side=T.DoubleSide; } }
   const nm=get(m.normalMap,false); if(nm) n.normalMap=nm;
   return n;
 }
