@@ -130,7 +130,8 @@ async function discover(folder,kind,max,keep){
 async function haveFile(u){ try{ const r=await fetch(u,{method:"HEAD"}); return r.ok&&!/text\/html/.test(r.headers.get("content-type")||""); }catch(e){ return false; } }
 async function findPeople(){
   const list=[]; let miss=0;
-  for(let i=1;i<=12&&miss<3;i++){ const u="assets/models/chars/"+i+".glb"; if(await haveFile(u)){ list.push(u); miss=0; } else miss++; }
+  const cn=navigator.connection||{}, lite=!!cn.saveData||/^(slow-2g|2g|3g)$/.test(cn.effectiveType||"");   /* data saver or a slow link: two extra people are plenty (each is ~2 MB) */
+  for(let i=1;i<=(lite?2:12)&&miss<3;i++){ const u="assets/models/chars/"+i+".glb"; if(await haveFile(u)){ list.push(u); miss=0; } else miss++; }
   return {list:list,davi:(await haveFile("assets/models/daviccino.glb"))?"assets/models/daviccino.glb":null};
 }
 async function discoverAll(){

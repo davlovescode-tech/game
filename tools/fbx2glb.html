@@ -43,7 +43,7 @@
     <li>Pick which one is Daviccino, then press <b>Download zip</b> and unzip it into your repo's <code>assets/models/</code> folder.</li>
   </ol>
   <div id="drop"><big>Drop .fbx / .zip files here</big><small>or click to choose (include the texture images too if Mixamo gave them separately)</small></div>
-  <input id="pick" type="file" multiple accept=".fbx,.zip,.png,.jpg,.jpeg" hidden>
+  <input id="pick" type="file" multiple accept=".fbx,.glb,.zip,.png,.jpg,.jpeg" hidden>
   <div class="opts">
     <label>Texture size <select id="tsz"><option value="512">512 (smallest)</option><option value="1024" selected>1024 (recommended)</option><option value="2048">2048 (big)</option></select></label>
     <label>JPEG quality <select id="jq"><option value=".75">75</option><option value=".85" selected>85</option><option value=".92">92</option></select></label>
@@ -120,29 +120,55 @@ function prepTexture(src,srgb,max,alphaSrc){
   const t=new T.CanvasTexture(c); t.flipY=src.flipY; t.wrapS=src.wrapS; t.wrapT=src.wrapT; t.anisotropy=1;
   t.encoding=srgb?T.sRGBEncoding:T.LinearEncoding; t.format=alpha?T.RGBAFormat:T.RGBFormat; alphaTex.add(t); if(!alpha) alphaTex.delete(t); return t;
 }
+/* a tiny fingerprint of an image, so the same picture stored several times (one copy per material) is written once */
+function sigOf(c){ const s=document.createElement("canvas"); s.width=s.height=24; const g=s.getContext("2d",{willReadFrequently:true}); g.drawImage(c,0,0,24,24); const d=g.getImageData(0,0,24,24).data; let h=c.width+"x"+c.height+":"; for(let i=0;i<d.length;i+=4) h+=(d[i]>>2)+","+(d[i+1]>>2)+","+(d[i+2]>>2)+";"; return h; }
 function toStandard(m,max,cache){
-  const get=(tex,srgb,a)=>{ if(!tex||!loaded(tex.image)) return null; const k=tex.uuid+(a?a.uuid:"")+srgb; if(!cache.has(k)) cache.set(k,prepTexture(tex,srgb,max,a)); return cache.get(k); };
-  const map=get(m.map,true,m.alphaMap&&m.map?m.alphaMap:null);
-  const n=new T.MeshStandardMaterial({name:m.name,color:map?0xffffff:(m.color?m.color.getHex():0xcccccc),roughness:.85,metalness:0,side:m.side});
+  const get=(tex,srgb,a)=>{ if(!tex||!loaded(tex.image)) return null; const k=tex.uuid+(a?a.uuid:"")+srgb;
+    if(!cache.has(k)){ const t=prepTexture(tex,srgb,max,a), sg="sig|"+srgb+"|"+sigOf(t.image); if(cache.has(sg)) cache.set(k,cache.get(sg)); else { cache.set(sg,t); cache.set(k,t); } }
+    return cache.get(k); };
+  const map=get(m.map,true,m.alphaMap&&m.map?m.alphaMap:null), nm=get(m.normalMap,false);
+  const col=map?0xffffff:(m.color?m.color.getHex():0xcccccc), mk="mat|"+(map?map.uuid:0)+"|"+(nm?nm.uuid:0)+"|"+col+"|"+m.side;
+  if(cache.has(mk)) return cache.get(mk);
+  const n=new T.MeshStandardMaterial({name:m.name,color:col,roughness:.85,metalness:0,side:m.side});
   if(map){ n.map=map; if(alphaTex.has(map)){ n.alphaTest=.5; n.side=T.DoubleSide; } }
-  const nm=get(m.normalMap,false); if(nm) n.normalMap=nm;
-  return n;
+  if(nm) n.normalMap=nm;
+  cache.set(mk,n); return n;
 }
 
-/* ---------- one FBX -> one GLB ---------- */
-async function convert(file,images,max,quality){
-  jpegQ=quality||.85;
-  const urls={}; images.forEach(im=>{ urls[base(im.name).toLowerCase()]=URL.createObjectURL(new Blob([im.data],{type:ext(im.name)==="png"?"image/png":"image/jpeg"})); });
-  const mgr=new T.LoadingManager(); mgr.setURLModifier(u=>{ const b=base(decodeURIComponent(u)).toLowerCase(); return urls[b]||u; });
-  const buf=file.data.buffer.slice(file.data.byteOffset,file.data.byteOffset+file.data.byteLength);
-  const obj=new T.FBXLoader(mgr).parse(buf,"");
+/* ---------- skeletons ---------- */
+/* Some exports carry one copy of the skeleton per mesh part (body, hair, clothes...), all with the same bone names. Only one copy would animate,
+   so the parts on the others would stay frozen. Keep one bone per name, point every skin at it, and drop the copies. Also strips the "mixamorig4:" style numbering. */
+const stem=n=>n.replace(/^mixamorig\d*:?/,"mixamorig");
+function mergeSkeletons(root){
+  const bones=[]; root.traverse(n=>{ if(n.isBone) bones.push(n); });
+  const isCopy=b=>b.parent&&b.parent.isBone&&stem(b.parent.name)===stem(b.name);
+  const canon=new Map(); bones.forEach(b=>{ const k=stem(b.name); if(!isCopy(b)&&!canon.has(k)) canon.set(k,b); });
+  bones.forEach(b=>{ const k=stem(b.name); if(!canon.has(k)) canon.set(k,b); });
+  root.updateMatrixWorld(true);
+  let swapped=0, drift=0;
+  root.traverse(m=>{
+    if(!m.isSkinnedMesh) return;
+    const nb=m.skeleton.bones.map(b=>{ const c=canon.get(stem(b.name))||b; if(c!==b){ swapped++; for(let i=0;i<16;i++) drift=Math.max(drift,Math.abs(c.matrixWorld.elements[i]-b.matrixWorld.elements[i])); } return c; });
+    m.skeleton=new T.Skeleton(nb,m.skeleton.boneInverses.map(x=>x.clone()));
+  });
+  let removed=0;
+  bones.forEach(b=>{ if(canon.get(stem(b.name))===b) return; [...b.children].forEach(k=>{ if(canon.get(stem(k.name))===k&&b.parent) b.parent.add(k); }); if(b.parent) b.parent.remove(b); removed++; });
+  bones.forEach(b=>{ b.name=stem(b.name); });
+  return {removed:removed,swapped:swapped,drift:drift};
+}
+
+/* ---------- one FBX (or an existing GLB) -> one small GLB ---------- */
+const KEEP=["position","normal","uv","skinIndex","skinWeight"];
+async function finish(obj,max,urls){
   const okTex=await waitTextures(obj);
   if(!okTex) log("  some textures did not load (missing image files?) - those parts will be plain colour",true);
+  const sk=mergeSkeletons(obj);
+  if(sk.removed) log("  merged "+sk.removed+" duplicate bones into one skeleton"+(sk.drift>.01?" (warning: copies were not in the same pose, max offset "+sk.drift.toFixed(3)+")":""));
   const cache=new Map(); let meshes=0;
   obj.traverse(n=>{
-    if(n.name) n.name=n.name.replace(/^mixamorig:/,"mixamorig");
     if(n.isMesh||n.isSkinnedMesh){
       meshes++; n.castShadow=n.receiveShadow=false;
+      Object.keys(n.geometry.attributes).forEach(k=>{ if(!KEEP.includes(k)) n.geometry.deleteAttribute(k); });   // extra UV sets etc. only add weight
       if(!n.geometry.index) n.geometry=T.BufferGeometryUtils.mergeVertices(n.geometry);   // FBX arrives unindexed: sharing vertices makes the file several times smaller
       n.material=Array.isArray(n.material)?n.material.map(m=>toStandard(m,max,cache)):toStandard(n.material,max,cache);
     }
@@ -151,8 +177,20 @@ async function convert(file,images,max,quality){
   if(!obj.getObjectByName("mixamorigHips")) log("  warning: no 'mixamorigHips' bone - this does not look like a Mixamo character, it will not animate",true);
   obj.animations=[]; obj.updateMatrixWorld(true);
   const glb=await new Promise((res,rej)=>{ new T.GLTFExporter().parse(obj,r=>res(r),{binary:true,onlyVisible:false,maxTextureSize:max,animations:[]}); });
-  Object.values(urls).forEach(u=>URL.revokeObjectURL(u));
-  return {glb:new Uint8Array(glb),tex:cache.size};
+  Object.values(urls||{}).forEach(u=>URL.revokeObjectURL(u));
+  return {glb:new Uint8Array(glb),tex:new Set([...cache.entries()].filter(e=>e[0].startsWith("sig|")).map(e=>e[1])).size};
+}
+async function convert(file,images,max,quality){
+  jpegQ=quality||.85;
+  const buf=file.data.buffer.slice(file.data.byteOffset,file.data.byteOffset+file.data.byteLength);
+  if(ext(file.name)==="glb"){
+    const obj=await new Promise((res,rej)=>new T.GLTFLoader().parse(buf,"",g=>res(g.scene),rej));
+    return finish(obj,max,{});
+  }
+  const urls={}; images.forEach(im=>{ urls[base(im.name).toLowerCase()]=URL.createObjectURL(new Blob([im.data],{type:ext(im.name)==="png"?"image/png":"image/jpeg"})); });
+  const mgr=new T.LoadingManager(); mgr.setURLModifier(u=>{ const b=base(decodeURIComponent(u)).toLowerCase(); return urls[b]||u; });
+  const obj=new T.FBXLoader(mgr).parse(buf,"");
+  return finish(obj,max,urls);
 }
 
 /* ---------- UI ---------- */
@@ -205,14 +243,14 @@ async function handle(fileList){
   if(busy) return; busy=true; logEl.textContent="";
   try{
     const all=await expand([...fileList]);
-    const fbx=all.filter(f=>ext(f.name)==="fbx"), imgs=all.filter(f=>/^(png|jpe?g)$/.test(ext(f.name)));
-    if(!fbx.length){ log("No .fbx file found in what you dropped.",true); return; }
+    const fbx=all.filter(f=>/^(fbx|glb)$/.test(ext(f.name))), imgs=all.filter(f=>/^(png|jpe?g)$/.test(ext(f.name)));
+    if(!fbx.length){ log("No .fbx or .glb file found in what you dropped.",true); return; }
     const max=+$("tsz").value, q=+$("jq").value;
     for(const f of fbx){
       log("Converting "+base(f.name)+" ...");
       try{
         const r=await convert(f,imgs,max,q);
-        items.push({name:base(f.name).replace(/\.fbx$/i,""),glb:r.glb,kb:Math.round(r.glb.length/1024),tex:r.tex,role:"person"});
+        items.push({name:base(f.name).replace(/\.(fbx|glb)$/i,""),glb:r.glb,kb:Math.round(r.glb.length/1024),tex:r.tex,role:"person"});
         log("  done: "+Math.round(r.glb.length/1024)+" KB");
         if(r.glb.length>4*1024*1024) log("  that is big - pick a smaller texture size to keep the game quick to load",true);
       }catch(e){ log("  failed: "+(e&&e.message||e),true); console.error(e); }

@@ -516,8 +516,10 @@ function loadGLB(url){
   return new Promise(res=>{
     if(!T.GLTFLoader||!T.SkeletonUtils){ res(null); return; }
     try{ new T.GLTFLoader().load(url,g=>{
-      /* Ready Player Me style rigs name the same bones without the "mixamorig" prefix (Hips, Spine, ...): add it so every lookup and clip works on both */
-      if(g.scene.getObjectByName("Hips")&&!g.scene.getObjectByName("mixamorigHips")) g.scene.traverse(n=>{ if(n.isBone&&!/^mixamorig/.test(n.name)) n.name="mixamorig"+n.name; });
+      /* Bone names differ between downloads: mixamorig:Hips, mixamorig4Hips (numbered when a rig is imported again), or no prefix at all (Ready Player Me ...).
+         Bring every one to "mixamorig"+Name so every lookup and clip works on all of them. */
+      let hn=null; g.scene.traverse(n=>{ if(!hn&&n.isBone&&/Hips$/.test(n.name)) hn=n.name; });
+      if(hn){ const pre=hn.slice(0,-4); if(pre!=="mixamorig") g.scene.traverse(n=>{ if(n.isBone&&n.name.indexOf(pre)===0) n.name="mixamorig"+n.name.slice(pre.length); }); }
       const root=new T.Group(); root.add(g.scene); res({scene:root,animations:g.animations}); },undefined,()=>res(null)); }catch(e){ res(null); }  /* wrapped, so a scale/rotation stored in the file stays and realify can scale/turn the wrapper */
   });
 }
