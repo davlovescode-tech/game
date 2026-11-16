@@ -205,6 +205,12 @@ function showEnv(which){
 }
 
 /* ---------- HUD helpers ---------- */
+let lastTimer="", lastStats="";
+const ICON_USERS='<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.2" r="3.2"/><path d="M3.2 19.5c0-3.3 2.6-5.6 5.8-5.6s5.8 2.3 5.8 5.6"/><path d="M16 5.4a3.2 3.2 0 0 1 0 5.6M18.2 14.2c1.9.7 3.2 2.5 3.2 5.3"/></svg>';
+function setTimer(label,val,unit,low){
+  const h='<span class="tl">'+label+'</span>'+(val!==""?'<b>'+val+'</b>'+(unit?'<i>'+unit+'</i>':''):""), key=h+(low?"|low":"");
+  if(key!==lastTimer){ timerEl.innerHTML=h; lastTimer=key; timerEl.classList.toggle("low",!!low); }
+}
 const timerEl=$("timer"), subEl=$("sub"), feedEl=$("feed"), statsEl=$("stats"), lbEl=$("lb"), deathEl=$("death"), bannerEl=$("banner"), promptEl=$("prompt"), hintEl=$("hint");
 function feed(text){
   const d=document.createElement("div"); d.className="f"; d.textContent=text; feedEl.appendChild(d);
@@ -633,7 +639,7 @@ function nearMiss(){ popText(pick(["CLOSE CALL 😮‍💨","WHOOSH! 😳","ITNA
 let snapC=null,snapAt=0,lastDeath=null,cardCv=null;
 function grabSnap(){
   try{ const cv=BB.renderer.domElement, tw=960, th=Math.max(1,Math.round(960*cv.height/cv.width)), o=document.createElement("canvas"); o.width=tw; o.height=th; o.getContext("2d").drawImage(cv,0,0,tw,th); snapC=o; }catch(e){ snapC=null; }
-  if(lastDeath) $("shareBtn").style.display="inline-block";
+  if(lastDeath) $("shareBtn").style.display="inline-flex";
 }
 function hideShare(){ $("shareBtn").style.display="none"; $("card").style.display="none"; snapAt=0; }
 function rrect(g,x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
@@ -671,8 +677,8 @@ function shareCard(){
   },"image/png");
 }
 $("shareBtn").onclick=openCard; $("cardClose").onclick=()=>{ $("card").style.display="none"; }; $("cardShare").onclick=shareCard; $("cardSave").onclick=saveCard;
-$("sndBtn").textContent=AUD.on?"🔊":"🔇";
-$("sndBtn").onclick=()=>{ AUD.on=!AUD.on; try{ localStorage.setItem("bb3d-snd",AUD.on?"1":"0"); }catch(e){} if(AUD.master) AUD.master.gain.setTargetAtTime(AUD.on?1:0,actx.currentTime,.05); $("sndBtn").textContent=AUD.on?"🔊":"🔇"; };
+$("sndBtn").classList.toggle("muted",!AUD.on);
+$("sndBtn").onclick=()=>{ AUD.on=!AUD.on; try{ localStorage.setItem("bb3d-snd",AUD.on?"1":"0"); }catch(e){} if(AUD.master) AUD.master.gain.setTargetAtTime(AUD.on?1:0,actx.currentTime,.05); $("sndBtn").classList.toggle("muted",!AUD.on); };
 addEventListener("keydown",e=>{ if(e.key==="Escape") $("card").style.display="none"; });
 
 function frame(t){
@@ -758,7 +764,7 @@ function frame(t){
   /* lobby prompt */
   if(state==="lobby"&&player){
     const s=nearestSpot();
-    if(s!==nearSpot){ nearSpot=s; if(s){ promptEl.textContent=s.label+(TOUCH?"":"  [E]"); promptEl.style.display="block"; } else promptEl.style.display="none"; }
+    if(s!==nearSpot){ nearSpot=s; if(s){ promptEl.innerHTML=(TOUCH?"":"<kbd>E</kbd>")+"<span>"+esc(s.label)+"</span>"; promptEl.classList.toggle("t",!!TOUCH); promptEl.style.display="flex"; } else promptEl.style.display="none"; }
   } else if(nearSpot){ nearSpot=null; promptEl.style.display="none"; }
 
   /* hud (10 fps) */
@@ -766,13 +772,14 @@ function frame(t){
   if(uiAcc>.1&&state!=="title"){
     uiAcc=0;
     if(state==="lobby"){
-      timerEl.textContent="🕺 Lobby · game starts in "+Math.max(0,Math.ceil(timer));
+      setTimer("Lobby starts in",Math.max(0,Math.ceil(timer)),"s",false);
       subEl.textContent="Round "+Math.min(results.length+1,CFG.roundsPerGame)+" of "+CFG.roundsPerGame+" · next map: "+nextDef.name;
     } else if(state==="play"){
-      timerEl.textContent=grace>0?"Get ready…":"⏳ Time left: "+Math.max(0,Math.ceil(timer))+"s";
+      if(grace>0) setTimer("Get ready","","",false); else { const left=Math.max(0,Math.ceil(timer)); setTimer("Time left",left,"s",left<=10); }
       subEl.textContent="Round "+(results.length+1)+" of "+CFG.roundsPerGame+" · "+curMap.name;
-      statsEl.innerHTML="Alive: <b>"+runners.filter(r=>r.alive).length+"</b>/"+runners.length+"<br>Points: <b>"+(player.alive?Math.floor(roundT):player.pts)+"</b>";
-    } else { timerEl.textContent="Round over!"; subEl.textContent="Back to the lobby in "+Math.max(0,Math.ceil(timer)); }
+      const sh='<div class="r"><span>ALIVE</span><span><b>'+runners.filter(r=>r.alive).length+'</b><i>/'+runners.length+'</i></span></div><div class="r"><span>POINTS</span><b>'+(player.alive?Math.floor(roundT):player.pts)+'</b></div>';
+      if(sh!==lastStats){ statsEl.innerHTML=sh; lastStats=sh; }
+    } else { setTimer("Round over","","",false); subEl.textContent="Back to the lobby in "+Math.max(0,Math.ceil(timer)); }
     const a=[];
     if(state==="lobby"){ if(buff.juice) a.push("🥤 Juice ready"); if(buff.shield) a.push("🛡️ Shield ready"); if(buff.bless) a.push("🙏 +5 pts ready"); }
     else if(state==="play"){
@@ -934,7 +941,7 @@ function phaseMsg(){
 function rosterMsg(){ return {t:"roster",list:runners.map(r=>({id:r.id,name:r.name,look:r.look,bot:!!r.bot}))}; }
 function updateRoomChip(){
   const c=$("roomChip"); if(!MP||!net.code){ c.style.display="none"; return; }
-  const n=runners.filter(r=>!r.bot).length; c.style.display=""; c.textContent="ROOM "+net.code+" · "+n+" 👥";
+  const n=runners.filter(r=>!r.bot).length; c.style.display=""; c.innerHTML="<b>"+esc(net.code)+"</b><em>"+ICON_USERS+n+"</em>";
 }
 $("roomChip").onclick=()=>{
   if(!net.code) return; const link=location.origin+location.pathname+"?room="+net.code;
