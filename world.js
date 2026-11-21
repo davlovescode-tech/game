@@ -24,12 +24,12 @@ const rangoliTex=ctex(512,512,g=>{
 });
 function signTex(text,bg,fg,sub,w,h){
   w=w||512; h=h||128;
-  return ctex(w,h,(g)=>{
+  return BB.ctexT(w,h,(g)=>{
     g.fillStyle=bg; rr(g,0,0,w,h,22); g.lineWidth=8; g.strokeStyle=fg; g.strokeRect(10,10,w-20,h-20);
     g.textAlign="center"; g.textBaseline="middle"; g.fillStyle=fg; g.shadowColor=fg; g.shadowBlur=14;
-    let fs=sub?60:70; g.font="400 "+fs+"px Bungee,Impact,sans-serif"; while(g.measureText(text).width>w-60&&fs>20){ fs-=3; g.font="400 "+fs+"px Bungee,Impact,sans-serif"; }
+    let fs=sub?60:70; g.font="italic 900 "+fs+"px 'Inter Display',Inter,Impact,sans-serif"; while(g.measureText(text).width>w-60&&fs>20){ fs-=3; g.font="italic 900 "+fs+"px 'Inter Display',Inter,Impact,sans-serif"; }
     g.fillText(text,w/2,sub?h*.4:h/2+3); g.shadowBlur=0;
-    if(sub){ g.font="800 30px Poppins,sans-serif"; g.fillStyle="#fff"; g.fillText(sub,w/2,h*.78); }
+    if(sub){ g.font="800 30px Inter,sans-serif"; g.fillStyle="#fff"; g.fillText(sub,w/2,h*.78); }
   });
 }
 function skylineTex(body,wins){
@@ -88,7 +88,7 @@ function scatter(n,minD,margin,H,avoid,placed){
   return pts.slice(pts.length-got);
 }
 function bulbs(parent,list){
-  const geo=SP(.14,6,5), mat=new T.MeshBasicMaterial({color:0xffffff,fog:false});
+  const geo=SP(.14,10,8), mat=new T.MeshBasicMaterial({color:0xffffff,fog:false});
   const items=list.map(p=>({x:p[0],y:p[1],z:p[2],s:1,color:pick([0xffe066,0xff3df0,0x27e6ff,0xff8a1f,0x3ddc84,0xffffff])}));
   return instanced(parent,geo,mat,items,false);
 }
@@ -142,20 +142,20 @@ W.buildStall=buildStall;
 function drawBoard(g,w,h,d){
   const bg=g.createLinearGradient(0,0,w,h); bg.addColorStop(0,"#1b0b3e"); bg.addColorStop(1,"#3a0f5e"); g.fillStyle=bg; g.fillRect(0,0,w,h);
   g.strokeStyle="#ffb703"; g.lineWidth=8; g.strokeRect(10,10,w-20,h-20);
-  g.textBaseline="middle"; g.textAlign="center"; g.fillStyle="#ffe066"; g.font="400 54px Bungee,Impact,sans-serif"; g.shadowColor="#ff3df0"; g.shadowBlur=16;
+  g.textBaseline="middle"; g.textAlign="center"; g.fillStyle="#ffe066"; g.font="italic 900 54px 'Inter Display',Inter,Impact,sans-serif"; g.shadowColor="#ff3df0"; g.shadowBlur=16;
   g.fillText("LEADERBOARD",w/2,56); g.shadowBlur=0;
-  if(!d){ g.fillStyle="#fff"; g.font="700 34px Poppins,sans-serif"; g.fillText("Play a round to get on the board!",w/2,h/2); return; }
-  g.font="700 26px Poppins,sans-serif"; g.fillStyle="#9ff3ff"; g.textAlign="left"; g.fillText(d.winner?("🏆 "+d.winner+" wins the game!"):("Next map: "+d.next),60,108);
-  g.textAlign="right"; g.fillStyle="#aaa"; g.font="700 24px Poppins,sans-serif";
+  if(!d){ g.fillStyle="#fff"; g.font="700 34px Inter,sans-serif"; g.fillText("Play a round to get on the board!",w/2,h/2); return; }
+  g.font="700 26px Inter,sans-serif"; g.fillStyle="#9ff3ff"; g.textAlign="left"; g.fillText(d.winner?("🏆 "+d.winner+" wins the game!"):("Next map: "+d.next),60,108);
+  g.textAlign="right"; g.fillStyle="#aaa"; g.font="700 24px Inter,sans-serif";
   const cols=[]; for(let i=0;i<d.N;i++) cols.push(560+i*110); const tx=cols.length?cols[cols.length-1]+150:760;
   cols.forEach((x,i)=>g.fillText("R"+(i+1),x,148)); g.fillText("TOTAL",tx+30,148);
   d.rows.slice(0,8).forEach((r,i)=>{
     const y=190+i*46;
     if(r.you){ g.fillStyle="rgba(255,183,3,.28)"; g.fillRect(40,y-22,w-80,44); }
-    g.textAlign="left"; g.fillStyle=i===0?"#ffe066":"#fff"; g.font="800 30px Poppins,sans-serif"; g.fillText((i+1)+".",60,y); g.fillText(r.name,120,y);
-    g.textAlign="right"; g.font="700 28px Poppins,sans-serif"; g.fillStyle="#ddd";
+    g.textAlign="left"; g.fillStyle=i===0?"#ffe066":"#fff"; g.font="800 30px Inter,sans-serif"; g.fillText((i+1)+".",60,y); g.fillText(r.name,120,y);
+    g.textAlign="right"; g.font="700 28px Inter,sans-serif"; g.fillStyle="#ddd";
     cols.forEach((x,k)=>g.fillText(r.per[k]!==undefined?String(r.per[k]):"-",x,y));
-    g.fillStyle="#3ddc84"; g.font="800 32px Poppins,sans-serif"; g.fillText(String(r.total),tx+30,y);
+    g.fillStyle="#3ddc84"; g.font="800 32px Inter,sans-serif"; g.fillText(String(r.total),tx+30,y);
   });
 }
 
@@ -189,7 +189,7 @@ W.buildHub=function(){
   for(let i=0;i<5;i++){ string(bl,tops[i],tops[i+5],3.2,22); }
   bulbs(g,bl);
   const lan=[]; for(let i=0;i<26;i++){ const a=Math.random()*PI*2, r=rnd(4,18); lan.push({x:Math.cos(a)*r,y:rnd(6,9),z:Math.sin(a)*r,s:rnd(.35,.6),color:pick([0xff8a1f,0xff3d7a,0xffd23f,0xff6a3d])}); }
-  instanced(g,SP(1,8,6),new T.MeshBasicMaterial({color:0xffffff,fog:false}),lan,false);
+  instanced(g,SP(1,16,12),new T.MeshLambertMaterial({color:0xffffff,emissive:0x7a3a10,fog:false}),lan,false);
   /* trees */
   [20,160,60,120,240,300].forEach(deg=>{
     const a=deg*PI/180, x=Math.cos(a)*17, z=Math.sin(a)*17;
@@ -206,15 +206,15 @@ W.buildHub=function(){
     obs.push({x:x,z:z,r:1.4});
   });
   /* gate arch with sign */
-  [-5.8,5.8].forEach(x=>{ mk(g,CY(.28,.36,9,12),M(0x2a1450,{r:.4,m:.4,e:.15,ec:0x8338ec}),x,4.5,22.6); mk(g,SP(.75,10,8),B(0xffe066),x,9.2,22.6,{glow:true}); obs.push({x:x,z:22.6,r:.5}); });
+  [-5.8,5.8].forEach(x=>{ mk(g,CY(.28,.36,9,12),M(0x2a1450,{r:.4,m:.4,e:.15,ec:0x8338ec}),x,4.5,22.6); const lamp=mk(g,SP(.75,22,14),B(0xffe066),x,9.2,22.6,{glow:true}); BB.nearShrink(lamp,11,5); obs.push({x:x,z:22.6,r:.5}); });
   mk(g,BX(13.6,2.4,.9),M(0x120a22,{r:.5}),0,8.4,22.6);
   const gs=new T.Mesh(new T.PlaneGeometry(13,2.1),new T.MeshBasicMaterial({map:signTex("BHAAG BRAINROT","#1a0838","#ff3df0","LOBBY  ·  @"+CFG.insta,1024,168)})); gs.position.set(0,8.4,22.1); gs.rotation.y=PI; g.add(gs);
   /* scoreboard */
   mk(g,BX(13.6,7.8,.5),M(0x120a22,{r:.5}),0,6.6,-23.6);
   [-5.5,5.5].forEach(x=>mk(g,CY(.22,.22,4,8),M(0x2a1a3a,{m:.5,r:.5}),x,2,-23.6));
-  const boardTex=ctex(1024,576,(c,w,h)=>drawBoard(c,w,h,null));
+  let boardData=null; const boardTex=BB.ctexT(1024,576,(c,w,h)=>drawBoard(c,w,h,boardData));
   const bm=new T.Mesh(new T.PlaneGeometry(13,7.2),new T.MeshBasicMaterial({map:boardTex})); bm.position.set(0,6.6,-23.3); g.add(bm);
-  hub.setBoard=function(d){ drawBoard(boardTex.userData.g,1024,576,d); boardTex.needsUpdate=true; };
+  hub.setBoard=function(d){ boardData=d; drawBoard(boardTex.userData.g,1024,576,d); boardTex.needsUpdate=true; };
   /* stalls */
   const mkSpot=(id,x,z,rot,label,r)=>{ const dx=Math.sin(rot), dz=Math.cos(rot); hub.spots.push({id:id,x:x+dx*3.1,z:z+dz*3.1,r:r||3.4,label:label}); };
   const stalls=[
@@ -307,7 +307,7 @@ function buildBazaar(){
   });
   const bl=[]; [-28,-14,0,14,28].forEach(z=>string(bl,[-H-3,9,z],[H+3,9,z],1.8,40)); [-28,-14,14,28].forEach(x=>string(bl,[x,9,-H-3],[x,9,H+3],1.8,40)); bulbs(g,bl);
   const lan=[]; for(let i=0;i<50;i++) lan.push({x:rnd(-H,H),y:rnd(5.5,8),z:rnd(-H,H),s:rnd(.3,.5),color:pick([0xff8a1f,0xff3d7a,0xffd23f])});
-  instanced(g,SP(1,8,6),new T.MeshBasicMaterial({color:0xffffff,fog:false}),lan,false);
+  instanced(g,SP(1,16,12),new T.MeshBasicMaterial({color:0xffffff,fog:false}),lan,false);
   const shf=sunShafts(g,10,H-4,{op:.06,len:44,color:0xffc98a});
   return {group:g,obs:obs,name:"Gali Bazaar",key:"bazaar",look:{top:0x5a3b9c,bot:0xffb27a,hs:0xffd9b0,hg:0x6a4a3a,hi:.75,sc:0xffc58a,si:1.3,sp:[-26,22,18],fn:48,ff:135,stars:false,hdr:'assets/env/venice_sunset_1k.hdr',hdrk:.6,ex:.74,bl:.4,tint:[1.04,1,.94],sat:1.12},
     tick(){ shf.update(); }};
@@ -344,7 +344,7 @@ function buildDisco(){
   const sz=-H+1.8;
   mk(g,BX(19,1.1,6),M(0x14082a,{r:.35,m:.6}),0,.55,sz);
   mk(g,BX(19.2,.2,.3),ledM,0,1.15,sz+3,{glow:true});
-  const st=ctex(1024,400,(c,w,h)=>{ const gr=c.createLinearGradient(0,0,w,0); gr.addColorStop(0,"#ff3df0"); gr.addColorStop(.5,"#8338ec"); gr.addColorStop(1,"#27e6ff"); c.fillStyle=gr; c.fillRect(0,0,w,h); c.fillStyle="#fff"; c.textAlign="center"; c.textBaseline="middle"; c.font="400 120px Bungee,Impact,sans-serif"; c.shadowColor="#000"; c.shadowBlur=18; c.fillText("DANDIYA NIGHT",w/2,150); c.font="800 46px Poppins,sans-serif"; c.fillText("DJ DAVICCINO  ·  @"+CFG.insta,w/2,290); });
+  const st=BB.ctexT(1024,400,(c,w,h)=>{ const gr=c.createLinearGradient(0,0,w,0); gr.addColorStop(0,"#ff3df0"); gr.addColorStop(.5,"#8338ec"); gr.addColorStop(1,"#27e6ff"); c.fillStyle=gr; c.fillRect(0,0,w,h); c.fillStyle="#fff"; c.textAlign="center"; c.textBaseline="middle"; c.font="italic 900 120px 'Inter Display',Inter,Impact,sans-serif"; c.shadowColor="#000"; c.shadowBlur=18; c.fillText("DANDIYA NIGHT",w/2,150); c.font="800 46px Inter,sans-serif"; c.fillText("DJ DAVICCINO  ·  @"+CFG.insta,w/2,290); });
   const scr=new T.Mesh(new T.PlaneGeometry(16.5,6.4),new T.MeshBasicMaterial({map:st,fog:false})); scr.position.set(0,7.6,-H-1.7); g.add(scr);
   mk(g,BX(17.2,7,.4),M(0x0a0418,{r:.5}),0,7.6,-H-2);
   [-10.5,10.5].forEach(x=>{ mk(g,BX(3.2,6.4,3),M(0x0e0620,{r:.5,m:.4}),x,3.2,sz); [1.7,4.4].forEach(y=>mk(g,CY(.9,.9,.2,18),M(0x050210,{r:.4,m:.5,e:.4,ec:0xff3df0}),x,y,sz+1.55,{rx:PI/2,cast:false})); obs.push({x:x,z:sz,r:2.3}); });
@@ -370,7 +370,7 @@ function buildClass(){
   { const wn=BB.pbr("plaster",{size:256,rep:5,repY:1,ns:1.4,color:[255,255,255]}); walls(g,M(0xffffff,{map:wall,nmap:wn.nmap,rmap:wn.rmap,r:1,ns:.7}),13,5); }
   const iz=-H-.95;
   mk(g,BX(19,6.4,.3),M(0x6a4a2a,{r:.6}),0,6.4,iz);
-  const chalk=ctex(768,256,(c,w,h)=>{ c.fillStyle="#2a4a3a"; c.fillRect(0,0,w,h); c.fillStyle="rgba(255,255,255,.06)"; for(let i=0;i<40;i++) c.fillRect(Math.random()*w,Math.random()*h,90,10); c.fillStyle="#fff"; c.textAlign="center"; c.textBaseline="middle"; c.font="700 54px 'Comic Sans MS',cursive,sans-serif"; c.fillText("TODAY: SKILL ISSUE 101",w/2,70); c.font="700 36px 'Comic Sans MS',cursive,sans-serif"; c.fillStyle="#ffe066"; c.fillText("Q1. Don't get touched. (5 marks)",w/2,140); c.fillStyle="#9ff3ff"; c.fillText("Sir ka beta: 99%   You: 0%  💀",w/2,200); });
+  const chalk=BB.ctexT(768,256,(c,w,h)=>{ c.fillStyle="#2a4a3a"; c.fillRect(0,0,w,h); c.fillStyle="rgba(255,255,255,.06)"; for(let i=0;i<40;i++) c.fillRect(Math.random()*w,Math.random()*h,90,10); c.fillStyle="#fff"; c.textAlign="center"; c.textBaseline="middle"; c.font="700 54px 'Comic Sans MS',cursive,sans-serif"; c.fillText("TODAY: SKILL ISSUE 101",w/2,70); c.font="700 36px 'Comic Sans MS',cursive,sans-serif"; c.fillStyle="#ffe066"; c.fillText("Q1. Don't get touched. (5 marks)",w/2,140); c.fillStyle="#9ff3ff"; c.fillText("Sir ka beta: 99%   You: 0%  💀",w/2,200); });
   const cb=new T.Mesh(new T.PlaneGeometry(18,5.6),new T.MeshBasicMaterial({map:chalk})); cb.position.set(0,6.4,iz+.2); g.add(cb);
   const clock=ctex(128,128,(c)=>{ c.fillStyle="#fff"; c.beginPath(); c.arc(64,64,60,0,PI*2); c.fill(); c.lineWidth=6; c.strokeStyle="#222"; c.stroke(); c.lineWidth=5; c.beginPath(); c.moveTo(64,64); c.lineTo(64,24); c.moveTo(64,64); c.lineTo(90,78); c.stroke(); });
   const ck=new T.Mesh(new T.CircleGeometry(1.2,20),new T.MeshBasicMaterial({map:clock})); ck.position.set(0,11,iz+.2); g.add(ck);

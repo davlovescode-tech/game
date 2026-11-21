@@ -55,7 +55,7 @@ const scene=new T.Scene();
 const camera=new T.PerspectiveCamera(62,1,0.1,420);
 scene.add(camera);
 BB.renderer=renderer; BB.scene=scene; BB.camera=camera;
-BB.resize=function(){ renderer.setPixelRatio(Q.pr); renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/Math.max(1,innerHeight); camera.updateProjectionMatrix(); if(BB.postResize) BB.postResize(); };
+BB.resize=function(){ if(BB.fitPoints) BB.fitPoints(); renderer.setPixelRatio(Q.pr); renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/Math.max(1,innerHeight); camera.updateProjectionMatrix(); if(BB.postResize) BB.postResize(); };
 addEventListener("resize",BB.resize); BB.resize();
 const maxAniso=Math.min(8,renderer.capabilities.getMaxAnisotropy?renderer.capabilities.getMaxAnisotropy():1);
 
@@ -155,6 +155,14 @@ function ctex(w,h,draw,rx,ry){
   return t;
 }
 BB.ctex=ctex;
+/* textures that contain text are redrawn once the web fonts have arrived (a canvas draws with a fallback font if the real one isn't loaded yet) */
+const textTex=[]; let fontsOK=!(document.fonts&&document.fonts.load);
+BB.ctexT=function(w,h,draw,rx,ry){ const t=ctex(w,h,draw,rx,ry); if(!fontsOK) textTex.push({t:t,draw:draw,w:w,h:h}); return t; };
+if(!fontsOK){
+  const done=()=>{ if(fontsOK) return; fontsOK=true; textTex.forEach(o=>{ const g=o.t.userData.g; g.clearRect(0,0,o.w,o.h); g.shadowBlur=0; o.draw(g,o.w,o.h); o.t.needsUpdate=true; }); textTex.length=0; };
+  Promise.all([document.fonts.load('italic 900 40px "Inter Display"'),document.fonts.load('700 30px Inter'),document.fonts.load('800 30px Inter')]).then(done,done);
+  setTimeout(done,4000);
+}
 const glowTex=ctex(128,128,(g,w,h)=>{ const r=g.createRadialGradient(64,64,0,64,64,64); r.addColorStop(0,"rgba(255,255,255,1)"); r.addColorStop(.35,"rgba(255,255,255,.45)"); r.addColorStop(1,"rgba(255,255,255,0)"); g.fillStyle=r; g.fillRect(0,0,w,h); });
 BB.glowSprite=function(color,scale,op){
   const s=new T.Sprite(new T.SpriteMaterial({map:glowTex,color:color,transparent:true,opacity:op===undefined?.8:op,blending:T.AdditiveBlending,depthWrite:false,fog:false}));
@@ -338,8 +346,12 @@ let pHead=0;
 for(let i=0;i<PN;i++) pPos[i*3+1]=-999;
 const pGeo=new T.BufferGeometry(); pGeo.setAttribute("position",new T.BufferAttribute(pPos,3)); pGeo.setAttribute("color",new T.BufferAttribute(pCol,3));
 const dotTex=ctex(64,64,(g,w,h)=>{ const r=g.createRadialGradient(32,32,0,32,32,32); r.addColorStop(0,"rgba(255,255,255,1)"); r.addColorStop(.35,"rgba(255,255,255,.55)"); r.addColorStop(1,"rgba(255,255,255,0)"); g.fillStyle=r; g.fillRect(0,0,w,h); });
-const pts=new T.Points(pGeo,new T.PointsMaterial({size:0.6,map:dotTex,vertexColors:true,transparent:true,depthWrite:false,blending:T.AdditiveBlending,sizeAttenuation:true}));
+const pts=new T.Points(pGeo,new T.PointsMaterial({size:0.42,map:dotTex,vertexColors:true,transparent:true,depthWrite:false,blending:T.AdditiveBlending,sizeAttenuation:true}));
 pts.frustumCulled=false; scene.add(pts);
+/* a spark right next to the camera would grow into a giant flat disc: cap its on-screen size */
+const ptMax={value:30};
+pts.material.onBeforeCompile=sh=>{ sh.uniforms.uMaxPt=ptMax; sh.vertexShader="uniform float uMaxPt;\n"+sh.vertexShader.replace("#include <logdepthbuf_vertex>","gl_PointSize=min(gl_PointSize,uMaxPt);\n#include <logdepthbuf_vertex>"); };
+BB.fitPoints=function(){ ptMax.value=Math.max(8,Math.round(innerHeight*Q.pr*.026)); };
 const _c=new T.Color();
 BB.emit=function(x,y,z,n,color,speed,life,grav,up){
   for(let k=0;k<n;k++){
@@ -367,9 +379,9 @@ BB.updateParticles=function(dt){
 BB.labelSprite=function(text,color,sub){
   const c=document.createElement("canvas"); c.width=512; c.height=sub?132:96; const g=c.getContext("2d");
   g.textAlign="center"; g.textBaseline="middle"; g.lineJoin="round";
-  g.font="bold 46px Poppins,system-ui,sans-serif"; g.lineWidth=9; g.strokeStyle="#000"; g.fillStyle=color;
+  g.font="bold 46px Inter,system-ui,sans-serif"; g.lineWidth=9; g.strokeStyle="#000"; g.fillStyle=color;
   const y=sub?44:50; g.strokeText(text,256,y); g.fillText(text,256,y);
-  if(sub){ g.font="bold 30px Poppins,system-ui,sans-serif"; g.lineWidth=7; g.strokeStyle="#000"; g.fillStyle="#ff9ff3"; g.strokeText(sub,256,100); g.fillText(sub,256,100); }
+  if(sub){ g.font="bold 30px Inter,system-ui,sans-serif"; g.lineWidth=7; g.strokeStyle="#000"; g.fillStyle="#ff9ff3"; g.strokeText(sub,256,100); g.fillText(sub,256,100); }
   const tex=new T.CanvasTexture(c);
   const s=new T.Sprite(new T.SpriteMaterial({map:tex,depthTest:false,transparent:true,fog:false}));
   s.scale.set(5.2,sub?1.34:0.98,1); s.renderOrder=10; return s;
@@ -377,8 +389,8 @@ BB.labelSprite=function(text,color,sub){
 let bubbles=[];
 BB.bubble=function(x,y,z,text,accent){
   const c=document.createElement("canvas"); c.width=640; c.height=96; const g=c.getContext("2d");
-  let fs=40; g.font="bold "+fs+"px Poppins,sans-serif";
-  while(g.measureText(text).width>590&&fs>18){ fs-=2; g.font="bold "+fs+"px Poppins,sans-serif"; }
+  let fs=40; g.font="bold "+fs+"px Inter,sans-serif";
+  while(g.measureText(text).width>590&&fs>18){ fs-=2; g.font="bold "+fs+"px Inter,sans-serif"; }
   g.textAlign="center"; g.textBaseline="middle";
   g.fillStyle="rgba(8,4,24,.82)"; g.fillRect(0,8,640,80); g.fillStyle=accent||"#ff4d6d"; g.fillRect(0,8,8,80);
   g.fillStyle="#fff"; g.fillText(text,324,50);
@@ -439,6 +451,7 @@ BB.postLook=function(){
   u.ex.value=look.ex; u.sat.value=look.sat; u.vig.value=look.vig; u.tint.value.set(look.tint[0],look.tint[1],look.tint[2]);
   bloomPass.strength=look.bloom*(Q.bloomScale||1);
 };
+BB.setFX=function(on){ BB.fxOn=!!on; if(gradePass){ gradePass.uniforms.grain.value=on?.035:0; gradePass.uniforms.ca.value=on?.00018:0; } };
 BB.setPost=function(on){
   on=!!on&&postOK&&typeof T.EffectComposer==="function";
   if(on&&!composer){ composer=makeComposer(); if(!composer){ postOK=false; on=false; } else BB.postResize(); }
@@ -446,9 +459,14 @@ BB.setPost=function(on){
   renderer.toneMapping=Q.post?T.NoToneMapping:T.ACESFilmicToneMapping;
   scene.traverse(o=>{ if(o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{ m.needsUpdate=true; }); } });
   if(Q.post&&BB.postLook) BB.postLook();
+  if(Q.post&&BB.fxOn===false) BB.setFX(false);
 };
 let _t0=0;
+/* things that hang right where the camera flies past (gate lamps) shrink away instead of filling the screen */
+BB.nearList=[];
+BB.nearShrink=function(m,r0,r1){ BB.nearList.push({m:m,s:m.scale.x,r0:r0,r1:r1}); };
 BB.render=function(t){
+  if(BB.nearList.length){ const cp=camera.position; for(const o of BB.nearList){ const k=clamp((o.m.position.distanceTo(cp)-o.r1)/(o.r0-o.r1),.001,1); o.m.scale.setScalar(o.s*k); } }
   if(Q.post&&composer){ if(gradePass) gradePass.uniforms.time.value=(t||0)%97; composer.render(); }
   else renderer.render(scene,camera);
 };
@@ -512,7 +530,7 @@ const HAIRS=[0x111111,0x2b1b12,0x3a2a1a,0x6b3a1a,0x1a1a40];
 BB.char=null;       /* the stock Soldier: fallback body for everybody, and the donor of the idle/walk/run clips */
 BB.chars=[];        /* optional extra people dropped into assets/models/chars/N.glb (Mixamo, T-pose, no animation needed) */
 BB.daviChar=null;   /* optional assets/models/daviccino.glb */
-function loadGLB(url){
+function loadGLB(url,onProg){
   return new Promise(res=>{
     if(!T.GLTFLoader||!T.SkeletonUtils){ res(null); return; }
     try{ new T.GLTFLoader().load(url,g=>{
@@ -520,7 +538,7 @@ function loadGLB(url){
          Bring every one to "mixamorig"+Name so every lookup and clip works on all of them. */
       let hn=null; g.scene.traverse(n=>{ if(!hn&&n.isBone&&/Hips$/.test(n.name)) hn=n.name; });
       if(hn){ const pre=hn.slice(0,-4); if(pre!=="mixamorig") g.scene.traverse(n=>{ if(n.isBone&&n.name.indexOf(pre)===0) n.name="mixamorig"+n.name.slice(pre.length); }); }
-      const root=new T.Group(); root.add(g.scene); res({scene:root,animations:g.animations}); },undefined,()=>res(null)); }catch(e){ res(null); }  /* wrapped, so a scale/rotation stored in the file stays and realify can scale/turn the wrapper */
+      const root=new T.Group(); root.add(g.scene); res({scene:root,animations:g.animations}); },e=>{ if(onProg&&e&&e.lengthComputable&&e.total>0) onProg(e.loaded/e.total); },()=>res(null)); }catch(e){ res(null); }  /* wrapped, so a scale/rotation stored in the file stays and realify can scale/turn the wrapper */
   });
 }
 /* size, ground level, hip scale and which way the model faces (toes vs ankle) -- measured, so any Mixamo export works */
@@ -597,8 +615,8 @@ function retargetClips(donor,dst){
   return out;
 }
 function ownClips(g){ const o={}; CLIP_NAMES.forEach(n=>{ const c=pickClip(g.animations,n); if(c) o[n]=c; }); return o; }
-BB.loadCharacter=async function(url){
-  const g=await loadGLB(url); if(!g) return false;
+BB.loadCharacter=async function(url,onProg){
+  const g=await loadGLB(url,onProg); if(!g) return false;
   BB.char=Object.assign({scene:g.scene,clips:g.animations,set:ownClips(g),name:"soldier"},measureChar(g.scene));
   return true;
 };

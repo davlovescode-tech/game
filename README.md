@@ -60,6 +60,7 @@ Repo **Settings > Pages**: Source = *Deploy from a branch*, Branch = `main`, fol
 - Daylight maps use real HDR skies from `assets/env/` (three.js example HDRIs): the sky you see, the lighting, the reflections and the sun direction (shadows, light shafts) all come from the same panorama, and distance haze takes the horizon's colour.
 - Taj Garden's lawn uses a photographic grass texture (`assets/textures/grass.jpg` + `grass_n.jpg`, resized).
 - Credit: Soldier model and animations from Mixamo (via three.js examples, MIT-licensed repo); the characters in `chars/` and `daviccino.glb` were downloaded from Mixamo and converted with `tools/fbx2glb.html`. Adobe's terms allow Mixamo characters in games but not redistributing the raw files, so check them before keeping the repo public; HDRIs from Poly Haven via three.js examples (CC0); grass texture from OpenGameArt ("Dark Grass" / "Backgrounds for top-down games"), licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/), slightly modified by resizing.
+- **Menu and settings:** the title page has a loading bar on the Play button, and Esc (or the sliders icon) opens Settings in a round: graphics quality (Auto, Low, Med, High), film grain, camera shake, FPS counter, sound volume and camera sensitivity. They are saved in the browser. In a solo game the settings sheet pauses the round; in a room the others keep playing. Fonts are self-hosted in `assets/fonts/` (Inter, SIL Open Font License, see `LICENSE-Inter.txt`), so nothing is fetched from Google.
 
 ## Sound, game feel and sharing
 
